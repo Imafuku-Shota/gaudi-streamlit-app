@@ -6,6 +6,7 @@ import time
 import requests
 import random
 import itertools
+import base64
 from PIL import Image
 
 st.set_page_config(layout="centered")
@@ -21,10 +22,10 @@ NUM_NEW_NODES = 41
 NUM_INTERNAL_NODES = NUM_NEW_NODES - 2
 MID_NODE_OFFSET = NUM_INTERNAL_NODES // 2
 
-NUM_CHOICES = 4                # 各段階で表示する候補数
-INITIAL_STRINGS = 3            # 最初に作る線の数
-ADD_STRINGS_PER_ROUND = 1      # 選択後に追加する線の数
-ADDITION_ROUNDS = 4            # 選択回数
+NUM_CHOICES = 4
+INITIAL_STRINGS = 3
+ADD_STRINGS_PER_ROUND = 1
+ADDITION_ROUNDS = 4
 FINAL_STRING_COUNT = INITIAL_STRINGS + ADD_STRINGS_PER_ROUND * ADDITION_ROUNDS
 
 GRAVITY = 0.08
@@ -35,7 +36,7 @@ DAMPING = 0.75
 # サイドバー：API設定とプロンプト
 # ============================================================
 st.sidebar.title("⚙️ AI生成設定")
-st.sidebar.markdown("APIキーが未入力の場合は、ダミー画像を表示します。")
+st.sidebar.markdown("APIキーが未入力の場合は、ダミー画像またはエラー表示になります。")
 
 api_key = st.sidebar.text_input(
     "APIキー (Stability AI)",
@@ -43,7 +44,22 @@ api_key = st.sidebar.text_input(
     help="Stability AIのAPIキーを入力してください"
 )
 
+modelslab_api_key = st.sidebar.text_input(
+    "APIキー (Stable Diffusion API / ModelsLab)",
+    type="password",
+    help="stablediffusionapi.com / ModelsLab のAPIキーを入力してください"
+)
+
+generation_mode = st.sidebar.selectbox(
+    "生成方式",
+    [
+        "Stability AI Control Structure",
+        "Stable Diffusion API / ModelsLab img2img"
+    ]
+)
+
 st.sidebar.markdown("---")
+
 user_prompt = st.sidebar.text_area(
     "生成プロンプト",
     value="""Transform this structural skeleton into a completed Gaudi-inspired fantasy castle integrated into a dramatic landscape.
@@ -89,7 +105,10 @@ def deep_copy_structure(structure):
 def format_node_label(idx):
     """ノード番号を画面表示用の名前に変換する。"""
     if idx < NUM_ANCHORS:
-        positions = ["一番左", "左から2番目", "左から3番目", "中央の左", "中央の右", "右から3番目", "右から2番目", "一番右"]
+        positions = [
+            "一番左", "左から2番目", "左から3番目", "中央の左",
+            "中央の右", "右から3番目", "右から2番目", "一番右"
+        ]
         return f"天井 {idx + 1} ({positions[idx]})"
 
     s_id = (idx - NUM_ANCHORS) // NUM_INTERNAL_NODES
@@ -124,7 +143,6 @@ def add_string_to_structure(structure, idx1, idx2):
     start_idx = len(nodes)
     first_link_idx = len(links)
 
-    # 両端は既存ノードなので、内部点だけを新しく追加する
     for i in range(1, NUM_NEW_NODES - 1):
         nodes.append({
             "x": float(new_x[i]),
@@ -191,7 +209,6 @@ def choose_random_pair(structure, rng):
     existing_pairs = get_existing_pairs(structure)
     all_pairs = list(itertools.combinations(candidates, 2))
 
-    # 同じ2点間に同じひもを重複して作らないようにする
     MIN_HORIZONTAL_DISTANCE = 3.0
 
     valid_pairs = []
@@ -237,7 +254,6 @@ def simulate_structure(structure, steps=350, constraint_iterations=6):
     links = structure["links"]
 
     for _ in range(steps):
-        # 重力と慣性
         for n in nodes:
             if not n.get("fixed", False):
                 vx = (n["x"] - n["px"]) * DAMPING
@@ -247,7 +263,6 @@ def simulate_structure(structure, steps=350, constraint_iterations=6):
                 n["x"] += vx
                 n["y"] += vy - GRAVITY
 
-        # リンク長制約
         for _ in range(constraint_iterations):
             for idx1, idx2, target_dist in links:
                 n1, n2 = nodes[idx1], nodes[idx2]
@@ -271,10 +286,7 @@ def simulate_structure(structure, steps=350, constraint_iterations=6):
 
 
 def relax_structure_copy(structure):
-    """
-    既存構造を次候補の親として使う前にコピーする。
-    ここでコピーすることで、選択済みの形を直接書き換えないようにする。
-    """
+    """既存構造を次候補の親として使う前にコピーする。"""
     copied = deep_copy_structure(structure)
     return copied
 
@@ -308,13 +320,23 @@ def draw_structure(structure, inverted=False, small=False, highlight_new=False):
 
     nodes = structure["nodes"]
 
-    # 天井点と天井線
-    ax.scatter([p["x"] for p in anchors], [0] * NUM_ANCHORS, color="#555555", s=anchor_size, zorder=10)
-    ax.plot([-20, 20], [0, 0], color="#777777", lw=2 if small else 4, zorder=5)
+    ax.scatter(
+        [p["x"] for p in anchors],
+        [0] * NUM_ANCHORS,
+        color="#555555",
+        s=anchor_size,
+        zorder=10
+    )
+    ax.plot(
+        [-20, 20],
+        [0, 0],
+        color="#777777",
+        lw=2 if small else 4,
+        zorder=5
+    )
 
     parent_string_count = structure.get("parent_string_count", None)
 
-    # ひもを描画
     for s in structure["string_data"]:
         base = NUM_ANCHORS + s["id"] * NUM_INTERNAL_NODES
         node_indices = [s["start_node"]] + list(range(base, base + NUM_INTERNAL_NODES)) + [s["end_node"]]
@@ -322,8 +344,12 @@ def draw_structure(structure, inverted=False, small=False, highlight_new=False):
         xs = [nodes[i]["x"] for i in node_indices if 0 <= i < len(nodes)]
         ys = [nodes[i]["y"] for i in node_indices if 0 <= i < len(nodes)]
 
-        # 次候補では、今回追加された2本だけ少し太く表示する
-        is_new_string = highlight_new and parent_string_count is not None and s["id"] >= parent_string_count
+        is_new_string = (
+            highlight_new
+            and parent_string_count is not None
+            and s["id"] >= parent_string_count
+        )
+
         color = "#1C83E1" if is_new_string else "black"
         lw = line_width + 1.0 if is_new_string else line_width
         z_order = 8 if is_new_string else 6
@@ -341,7 +367,6 @@ def draw_structure(structure, inverted=False, small=False, highlight_new=False):
     bottom_limit, half_width = get_active_bounds(structure)
 
     if inverted:
-        # y軸の上下を逆にすることで、吊り構造を建築骨組みの向きに反転する
         ax.set_ylim(5, bottom_limit)
     else:
         ax.set_ylim(bottom_limit, 5)
@@ -367,14 +392,17 @@ def make_ai_input_image(structure):
     return out_buf.getvalue()
 
 
-def generate_castle_image(image_bytes, prompt, key):
+# ============================================================
+# AI画像生成関数
+# ============================================================
+def generate_castle_image_stability(image_bytes, prompt, key):
     """Stability AI Control Structureで、骨組みを構造ガイドとして画像生成する。"""
     if not key:
         time.sleep(1.0)
         img = Image.new("RGB", (1024, 1024), color=(150, 160, 170))
         buf = io.BytesIO()
         img.save(buf, format="PNG")
-        st.warning("⚠️ APIキーが入力されていないため、ダミー画像を表示しています。")
+        st.warning("⚠️ Stability AI APIキーが入力されていないため、ダミー画像を表示しています。")
         return buf.getvalue()
 
     st.info("🌐 Stability AI Control Structureで生成中...")
@@ -396,7 +424,10 @@ def generate_castle_image(image_bytes, prompt, key):
                 "control_strength": "0.45",
                 "output_format": "png",
                 "negative_prompt": (
-                    "black guide lines, dots, graph marks, wireframe, blueprint, "
+                    "visible guide lines, black curves, black hanging chains, exposed wireframe, "
+                    "scaffolding, skeleton lines, black dots, gray baseline, graph marks, blueprint, "
+                    "orthographic front view, flat elevation drawing, centered isolated object, "
+                    "toy model, miniature model, plain background, empty background, "
                     "simple line drawing, unfinished sketch, low detail, text, watermark"
                 )
             },
@@ -404,48 +435,89 @@ def generate_castle_image(image_bytes, prompt, key):
         )
 
         if response.status_code != 200:
-            st.error(f"APIエラーが発生しました: {response.status_code}")
+            st.error(f"Stability AI APIエラーが発生しました: {response.status_code}")
             st.code(response.text)
             return None
 
         return response.content
 
     except Exception as e:
-        st.error(f"通信中にエラーが発生しました: {e}")
+        st.error(f"Stability AI通信中にエラーが発生しました: {e}")
         return None
 
+
+def generate_castle_image_modelslab_base64(image_bytes, prompt, key):
+    """Stable Diffusion API / ModelsLab img2imgにbase64画像を直接渡して試す。"""
+    if not key:
+        st.warning("⚠️ ModelsLab APIキーが入力されていません。")
+        return None
+
+    st.info("🌐 Stable Diffusion API / ModelsLab img2imgで生成中...")
+
+    image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+
+    url = "https://stablediffusionapi.com/api/v3/img2img"
+
+    payload = {
+        "key": key,
+        "prompt": prompt,
+        "negative_prompt": (
+            "visible guide lines, black curves, black dots, wireframe, blueprint, "
+            "simple line drawing, text, watermark, low quality, blurry, distorted"
+        ),
+        "init_image": image_base64,
+        "width": "512",
+        "height": "512",
+        "samples": "1",
+        "num_inference_steps": "30",
+        "guidance_scale": 7.5,
+        "safety_checker": "yes",
+        "strength": 0.7,
+        "seed": None,
+        "webhook": None,
+        "track_id": None
+    }
+
     try:
-        response = requests.post(
-            f"{api_host}/v1/generation/{engine_id}/image-to-image",
-            headers={
-                "Accept": "application/json",
-                "Authorization": f"Bearer {key}"
-            },
-            files={"init_image": image_bytes},
-            data={
-                "image_strength": 0.5,
-                "init_image_mode": "IMAGE_STRENGTH",
-                "text_prompts[0][text]": prompt,
-                "text_prompts[0][weight]": 1.0,
-                "cfg_scale": 7,
-                "samples": 1,
-                "steps": 30,
-            }
-        )
+        response = requests.post(url, json=payload, timeout=180)
 
         if response.status_code != 200:
-            st.error(f"APIエラーが発生しました: {response.status_code} - {response.text}")
+            st.error(f"ModelsLab APIエラー: {response.status_code}")
+            st.code(response.text)
             return None
 
         data = response.json()
-        import base64
-        return base64.b64decode(data["artifacts"][0]["base64"])
+
+        with st.expander("ModelsLab APIレスポンスを確認する"):
+            st.json(data)
+
+        if "output" in data and len(data["output"]) > 0:
+            image_url = data["output"][0]
+            img_response = requests.get(image_url, timeout=60)
+
+            if img_response.status_code != 200:
+                st.error("生成画像URLから画像を取得できませんでした。")
+                st.code(img_response.text)
+                return None
+
+            return img_response.content
+
+        if "future_links" in data and len(data["future_links"]) > 0:
+            st.warning("生成が非同期処理になっています。少し待ってから再生成してください。")
+            st.write(data["future_links"])
+            return None
+
+        st.error("生成画像URLが見つかりませんでした。")
+        return None
 
     except Exception as e:
-        st.error(f"通信中にエラーが発生しました: {e}")
+        st.error(f"ModelsLab通信中にエラーが発生しました: {e}")
         return None
 
 
+# ============================================================
+# 候補生成関数
+# ============================================================
 def make_initial_candidate(seed):
     """最初の3本線を持つ候補を1つ作る。"""
     rng = random.Random(seed)
@@ -457,14 +529,9 @@ def make_initial_candidate(seed):
 
 
 def make_next_candidate(parent_structure, seed):
-    """
-    選択済みの構造を親としてコピーし、そこからランダムに2本線を追加した候補を1つ作る。
-    """
+    """選択済みの構造を親としてコピーし、そこからランダムに1本線を追加した候補を1つ作る。"""
     rng = random.Random(seed)
 
-    # ここが重要：
-    # 選ばれた構造をコピーしてから、そのコピーに2本追加する。
-    # これにより、次画面には「選んだ形 + 新しい2本」の4候補が表示される。
     structure = relax_structure_copy(parent_structure)
     parent_count = len(parent_structure["string_data"])
     structure["parent_string_count"] = parent_count
@@ -486,7 +553,7 @@ def generate_initial_candidates():
 
 
 def generate_next_candidates_from_selected():
-    """選択済み構造を親として、2本追加した4候補を生成する。"""
+    """選択済み構造を親として、1本追加した4候補を生成する。"""
     parent = st.session_state.selected_structure
     if parent is None:
         return
@@ -518,7 +585,6 @@ if "app_phase" not in st.session_state:
     st.session_state.need_generate_next = False
     generate_initial_candidates()
 
-# 選択後の再実行で、必ず「選んだ構造 + ランダム2本」から4候補を作る
 if (
     st.session_state.app_phase == "choice"
     and st.session_state.choice_step > 0
@@ -539,7 +605,7 @@ if st.session_state.app_phase == "choice":
     if st.session_state.choice_step == 0:
         st.write("最初に、ランダムに3本のひもを作った候補を4つ表示しています。")
     else:
-        st.write("選んだ形をもとに、ランダムに2本のひもを追加した候補を4つ表示しています。")
+        st.write("選んだ形をもとに、ランダムに1本のひもを追加した候補を4つ表示しています。")
 
     st.caption(
         f"選択段階: {st.session_state.choice_step + 1} / {total_choices}　"
@@ -548,7 +614,6 @@ if st.session_state.app_phase == "choice":
 
     candidates = st.session_state.candidates
 
-    # 2列×2行で4候補を表示
     for row in range(2):
         cols = st.columns(2)
         for col in range(2):
@@ -575,9 +640,11 @@ if st.session_state.app_phase == "choice":
                         f"(追加 {candidate.get('actually_added', current_count - parent_count)}本)"
                     )
 
-                if st.button(f"案 {idx + 1} を選択", key=f"select_{st.session_state.choice_step}_{idx}", use_container_width=True):
-                    # 選んだ候補を親として保存する。
-                    # 直接参照ではなくコピーして保存し、次の候補生成時の親構造を固定する。
+                if st.button(
+                    f"案 {idx + 1} を選択",
+                    key=f"select_{st.session_state.choice_step}_{idx}",
+                    use_container_width=True
+                ):
                     st.session_state.selected_structure = deep_copy_structure(candidate)
                     st.session_state.generated_image_bytes = None
                     st.session_state.ai_input_image_bytes = None
@@ -636,6 +703,7 @@ elif st.session_state.app_phase == "inverted":
 
     with col1:
         if st.button("AI画像を生成する", type="primary", use_container_width=True):
+            st.session_state.generated_image_bytes = None
             st.session_state.app_phase = "generate"
             st.rerun()
 
@@ -656,6 +724,8 @@ elif st.session_state.app_phase == "generate":
     if st.session_state.ai_input_image_bytes is None:
         st.session_state.ai_input_image_bytes = make_ai_input_image(structure)
 
+    st.caption(f"現在の生成方式: {generation_mode}")
+
     col1, col2 = st.columns(2)
 
     with col1:
@@ -667,11 +737,20 @@ elif st.session_state.app_phase == "generate":
 
         if st.session_state.generated_image_bytes is None:
             with st.spinner("AIがレンダリングしています..."):
-                st.session_state.generated_image_bytes = generate_castle_image(
-                    st.session_state.ai_input_image_bytes,
-                    user_prompt,
-                    api_key
-                )
+
+                if generation_mode == "Stability AI Control Structure":
+                    st.session_state.generated_image_bytes = generate_castle_image_stability(
+                        st.session_state.ai_input_image_bytes,
+                        user_prompt,
+                        api_key
+                    )
+
+                else:
+                    st.session_state.generated_image_bytes = generate_castle_image_modelslab_base64(
+                        st.session_state.ai_input_image_bytes,
+                        user_prompt,
+                        modelslab_api_key
+                    )
 
         if st.session_state.generated_image_bytes:
             st.image(st.session_state.generated_image_bytes, use_container_width=True)
