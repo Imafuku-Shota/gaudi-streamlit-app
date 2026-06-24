@@ -46,8 +46,18 @@ api_key = st.sidebar.text_input(
 st.sidebar.markdown("---")
 user_prompt = st.sidebar.text_area(
     "生成プロンプト",
-    value="A majestic medieval fantasy castle designed by Antoni Gaudi, intricate stone carving, sunset lighting, epic scale, highly detailed, masterpiece, 8k resolution",
-    height=150
+    value="""Transform this structural skeleton into a completed Gaudi-inspired fantasy castle integrated into a dramatic landscape.
+
+Use the input image only as a loose structural guide for the main silhouette, arches, and tower rhythm. Do not reproduce the guide lines themselves.
+
+Show the structure from a dynamic architectural viewpoint.
+
+The castle should be part of a larger architectural scene with stone terraces, stairways, bridges, courtyards, trees, mountains, and atmospheric sky.
+
+The structure should feel like a real inhabited building, not an isolated model. Add depth, perspective, shadows, surrounding ground, paths, small human figures, vegetation, and environmental context.
+
+Organic Gaudi-inspired architecture, sculptural stone facade, flowing arches, spires, detailed windows, masonry texture, realistic architectural concept art, cinematic lighting, highly detailed.""",
+    height=300
 )
 
 # ============================================================
