@@ -383,7 +383,7 @@ def generate_castle_image(image_bytes, prompt, key):
             },
             data={
                 "prompt": prompt,
-                "control_strength": "0.65",
+                "control_strength": "0.45",
                 "output_format": "png",
                 "negative_prompt": (
                     "black guide lines, dots, graph marks, wireframe, blueprint, "
