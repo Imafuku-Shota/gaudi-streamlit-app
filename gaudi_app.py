@@ -358,7 +358,7 @@ def make_ai_input_image(structure):
 
 
 def generate_castle_image(image_bytes, prompt, key):
-    """Stability AIのimage-to-image生成。APIキーがない場合はダミー画像を返す。"""
+    """Stability AI Control Structureで、骨組みを構造ガイドとして画像生成する。"""
     if not key:
         time.sleep(1.0)
         img = Image.new("RGB", (1024, 1024), color=(150, 160, 170))
@@ -367,10 +367,42 @@ def generate_castle_image(image_bytes, prompt, key):
         st.warning("⚠️ APIキーが入力されていないため、ダミー画像を表示しています。")
         return buf.getvalue()
 
-    st.info("🌐 Stability AIのサーバーに通信中...")
+    st.info("🌐 Stability AI Control Structureで生成中...")
 
-    api_host = "https://api.stability.ai"
-    engine_id = "stable-diffusion-xl-1024-v1-0"
+    url = "https://api.stability.ai/v2beta/stable-image/control/structure"
+
+    try:
+        response = requests.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {key}",
+                "Accept": "image/*"
+            },
+            files={
+                "image": ("skeleton.png", image_bytes, "image/png")
+            },
+            data={
+                "prompt": prompt,
+                "control_strength": "0.65",
+                "output_format": "png",
+                "negative_prompt": (
+                    "black guide lines, dots, graph marks, wireframe, blueprint, "
+                    "simple line drawing, unfinished sketch, low detail, text, watermark"
+                )
+            },
+            timeout=120
+        )
+
+        if response.status_code != 200:
+            st.error(f"APIエラーが発生しました: {response.status_code}")
+            st.code(response.text)
+            return None
+
+        return response.content
+
+    except Exception as e:
+        st.error(f"通信中にエラーが発生しました: {e}")
+        return None
 
     try:
         response = requests.post(
