@@ -4,3 +4,4 @@ matplotlib
 requests
 pillow
 google-genai
+fal-client
