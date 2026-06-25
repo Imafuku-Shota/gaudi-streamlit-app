@@ -6,8 +6,9 @@ import time
 import random
 import itertools
 import base64
+import os
+import requests
 from PIL import Image
-from google import genai
 
 st.set_page_config(layout="centered")
 
@@ -36,20 +37,19 @@ DAMPING = 0.75
 # サイドバー：API設定とプロンプト
 # ============================================================
 st.sidebar.title("⚙️ AI生成設定")
-st.sidebar.markdown("Gemini APIキーが未入力の場合は、ダミー画像を表示します。")
+st.sidebar.markdown("fal.ai APIキーが未入力の場合は、ダミー画像を表示します。")
 
-gemini_api_key = st.sidebar.text_input(
-    "APIキー (Gemini API)",
+fal_api_key = st.sidebar.text_input(
+    "APIキー (fal.ai)",
     type="password",
-    help="Google AI Studioで取得したGemini APIキーを入力してください"
+    help="fal.ai のAPIキーを入力してください。Streamlit SecretsのFAL_KEYも使えます。"
 )
 
-gemini_model = st.sidebar.selectbox(
-    "Gemini画像生成モデル",
+flux_model = st.sidebar.selectbox(
+    "FLUXモデル",
     [
-        "gemini-3.1-flash-image",
-        "gemini-3-pro-image",
-        "gemini-2.5-flash-image"
+        "fal-ai/flux-pro/kontext",
+        "fal-ai/flux-pro/kontext/max"
     ],
     index=0
 )
@@ -360,74 +360,71 @@ def make_ai_input_image(structure):
 
 
 # ============================================================
-# Gemini画像生成関数
+# FLUX画像生成関数
 # ============================================================
-def extract_image_from_interaction(interaction):
-    if getattr(interaction, "output_image", None) is not None:
-        return base64.b64decode(interaction.output_image.data)
+def generate_castle_image_flux(image_bytes, prompt, key, model_name):
+    if not key:
+        try:
+            key = st.secrets.get("FAL_KEY", "")
+        except Exception:
+            key = ""
 
-    if getattr(interaction, "steps", None) is not None:
-        for step in interaction.steps:
-            if getattr(step, "type", None) == "model_output":
-                for block in getattr(step, "content", []):
-                    if getattr(block, "type", None) == "image":
-                        return base64.b64decode(block.data)
-
-    return None
-
-
-def generate_castle_image_gemini(image_bytes, prompt, key, model_name):
     if not key:
         time.sleep(1.0)
         img = Image.new("RGB", (1024, 1024), color=(150, 160, 170))
         buf = io.BytesIO()
         img.save(buf, format="PNG")
-        st.warning("⚠️ Gemini APIキーが入力されていないため、ダミー画像を表示しています。")
+        st.warning("⚠️ fal.ai APIキーが入力されていないため、ダミー画像を表示しています。")
         return buf.getvalue()
 
-    st.info(f"🌐 Gemini APIで生成中... 使用モデル: {model_name}")
+    st.info(f"🌐 fal.ai / FLUX Kontextで生成中... 使用モデル: {model_name}")
 
     try:
-        client = genai.Client(api_key=key)
+        os.environ["FAL_KEY"] = key
+        import fal_client
 
         image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+        image_data_uri = f"data:image/png;base64,{image_base64}"
 
         full_prompt = prompt + """
 
-Important image-editing instruction:
-Use the provided skeleton image as a structural reference.
-Preserve the main silhouette, arch rhythm, vertical tower positions, and global composition.
-Do not show the original black lines, dots, graph baseline, or wireframe.
-Convert the structure into a completed architectural scene.
+Important instruction:
+Use the input skeleton image as a structural reference.
+Preserve the main silhouette, arch rhythm, tower positions, and overall composition.
+Do not reproduce the original black guide lines, dots, baseline, graph-like marks, or wireframe.
+Convert the structure into a completed Gaudi-inspired architectural scene.
 """
 
-        interaction = client.interactions.create(
-            model=model_name,
-            input=[
-                {
-                    "type": "text",
-                    "text": full_prompt
-                },
-                {
-                    "type": "image",
-                    "data": image_base64,
-                    "mime_type": "image/png"
-                }
-            ]
+        result = fal_client.subscribe(
+            model_name,
+            arguments={
+                "prompt": full_prompt,
+                "image_url": image_data_uri,
+                "guidance_scale": 3.5,
+                "num_images": 1,
+                "output_format": "png",
+                "safety_tolerance": "2",
+            },
         )
 
-        result_bytes = extract_image_from_interaction(interaction)
-
-        if result_bytes is None:
-            st.error("Geminiから画像データが返ってきませんでした。")
-            with st.expander("Geminiレスポンス確認"):
-                st.write(interaction)
+        if "images" not in result or len(result["images"]) == 0:
+            st.error("FLUXから画像URLが返ってきませんでした。")
+            with st.expander("fal.aiレスポンス確認"):
+                st.json(result)
             return None
 
-        return result_bytes
+        image_url = result["images"][0]["url"]
+        img_response = requests.get(image_url, timeout=60)
+
+        if img_response.status_code != 200:
+            st.error("生成画像URLから画像を取得できませんでした。")
+            st.code(img_response.text)
+            return None
+
+        return img_response.content
 
     except Exception as e:
-        st.error(f"Gemini API通信中にエラーが発生しました: {e}")
+        st.error(f"fal.ai / FLUX通信中にエラーが発生しました: {e}")
         return None
 
 
@@ -609,7 +606,7 @@ elif st.session_state.app_phase == "inverted":
 
     structure = st.session_state.selected_structure
 
-    st.write("吊り下げた構造を上下反転しました。この画像をGemini API画像生成の入力に使います。")
+    st.write("吊り下げた構造を上下反転しました。この画像をFLUX画像生成の入力に使います。")
 
     ai_input_image_bytes = make_ai_input_image(structure)
     st.session_state.ai_input_image_bytes = ai_input_image_bytes
@@ -634,14 +631,14 @@ elif st.session_state.app_phase == "inverted":
 # 画面：AI生成フェーズ
 # ============================================================
 elif st.session_state.app_phase == "generate":
-    st.title("🏰 Gemini API画像生成")
+    st.title("🏰 FLUX画像生成")
 
     structure = st.session_state.selected_structure
 
     if st.session_state.ai_input_image_bytes is None:
         st.session_state.ai_input_image_bytes = make_ai_input_image(structure)
 
-    st.caption(f"現在の生成モデル: {gemini_model}")
+    st.caption(f"現在の生成モデル: {flux_model}")
 
     col1, col2 = st.columns(2)
 
@@ -650,15 +647,15 @@ elif st.session_state.app_phase == "generate":
         st.image(st.session_state.ai_input_image_bytes, use_container_width=True)
 
     with col2:
-        st.subheader("🎨 Gemini生成結果")
+        st.subheader("🎨 FLUX生成結果")
 
         if st.session_state.generated_image_bytes is None:
-            with st.spinner("Geminiがレンダリングしています..."):
-                st.session_state.generated_image_bytes = generate_castle_image_gemini(
+            with st.spinner("FLUXがレンダリングしています..."):
+                st.session_state.generated_image_bytes = generate_castle_image_flux(
                     st.session_state.ai_input_image_bytes,
                     user_prompt,
-                    gemini_api_key,
-                    gemini_model
+                    fal_api_key,
+                    flux_model
                 )
 
         if st.session_state.generated_image_bytes:
