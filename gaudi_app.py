@@ -3,12 +3,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 import io
 import time
+import requests
 import random
 import itertools
-import base64
-import os
-import requests
 from PIL import Image
+from huggingface_hub import InferenceClient
 
 st.set_page_config(layout="centered")
 
@@ -37,21 +36,44 @@ DAMPING = 0.75
 # サイドバー：API設定とプロンプト
 # ============================================================
 st.sidebar.title("⚙️ AI生成設定")
-st.sidebar.markdown("fal.ai APIキーが未入力の場合は、ダミー画像を表示します。")
+st.sidebar.markdown("APIキーが未入力の場合は、ダミー画像またはエラー表示になります。")
 
-fal_api_key = st.sidebar.text_input(
-    "APIキー (fal.ai)",
-    type="password",
-    help="fal.ai のAPIキーを入力してください。Streamlit SecretsのFAL_KEYも使えます。"
+generation_mode = st.sidebar.selectbox(
+    "生成方式",
+    [
+        "Stability AI Control Structure",
+        "Hugging Face Inference Providers"
+    ]
 )
 
-flux_model = st.sidebar.selectbox(
-    "FLUXモデル",
+api_key = st.sidebar.text_input(
+    "APIキー (Stability AI)",
+    type="password",
+    help="Stability AIのAPIキーを入力してください"
+)
+
+hf_token = st.sidebar.text_input(
+    "APIトークン (Hugging Face)",
+    type="password",
+    help="Hugging Faceの hf_... で始まるアクセストークンを入力してください"
+)
+
+hf_provider = st.sidebar.selectbox(
+    "Hugging Face Provider",
     [
-        "fal-ai/flux-pro/kontext",
-        "fal-ai/flux-pro/kontext/max"
+        "fal-ai",
+        "replicate"
     ],
-    index=0
+    help="まずは fal-ai で試してください。うまくいかない場合は replicate を試します。"
+)
+
+hf_model_id = st.sidebar.selectbox(
+    "Hugging Faceモデル",
+    [
+        "black-forest-labs/FLUX.1-Kontext-dev",
+        "black-forest-labs/FLUX.2-dev"
+    ],
+    help="まずは FLUX.1-Kontext-dev で試してください。"
 )
 
 st.sidebar.markdown("---")
@@ -60,9 +82,7 @@ user_prompt = st.sidebar.text_area(
     "生成プロンプト",
     value="""Transform this structural skeleton into a completed Gaudi-inspired fantasy castle integrated into a dramatic landscape.
 
-Use the input image as a structural guide for the main silhouette, arches, tower rhythm, and overall composition. Do not reproduce the black guide lines, dots, or flat graph-like appearance.
-
-Preserve the main architectural skeleton, but reinterpret it as a realistic completed building.
+Use the input image only as a loose structural guide for the main silhouette, arches, and tower rhythm. Do not reproduce the guide lines themselves.
 
 Show the structure from a dynamic architectural viewpoint.
 
@@ -78,6 +98,7 @@ Organic Gaudi-inspired architecture, sculptural stone facade, flowing arches, sp
 # 基本関数
 # ============================================================
 def create_empty_structure():
+    """天井固定点だけを持つ空の構造を作る。"""
     return {
         "nodes": [
             {"x": p["x"], "y": p["y"], "px": p["x"], "py": p["y"], "fixed": True}
@@ -90,6 +111,7 @@ def create_empty_structure():
 
 
 def deep_copy_structure(structure):
+    """候補ごとに独立して扱えるように、構造を深くコピーする。"""
     return {
         "nodes": [dict(n) for n in structure["nodes"]],
         "links": list(structure["links"]),
@@ -98,7 +120,21 @@ def deep_copy_structure(structure):
     }
 
 
+def format_node_label(idx):
+    """ノード番号を画面表示用の名前に変換する。"""
+    if idx < NUM_ANCHORS:
+        positions = [
+            "一番左", "左から2番目", "左から3番目", "中央の左",
+            "中央の右", "右から3番目", "右から2番目", "一番右"
+        ]
+        return f"天井 {idx + 1} ({positions[idx]})"
+
+    s_id = (idx - NUM_ANCHORS) // NUM_INTERNAL_NODES
+    return f"ひも {s_id + 1} の中央"
+
+
 def add_string_to_structure(structure, idx1, idx2):
+    """指定した2点の間に、新しいひもを1本追加する。"""
     nodes = structure["nodes"]
     links = structure["links"]
     string_data = structure["string_data"]
@@ -153,10 +189,15 @@ def add_string_to_structure(structure, idx1, idx2):
     })
 
     structure.setdefault("added_pairs", []).append((idx1, idx2))
+
     return True
 
 
 def get_connection_candidates(structure):
+    """
+    次にひもを接続できる候補点を返す。
+    候補は、8個の天井点と、既存ひもの中央点。
+    """
     candidates = list(range(NUM_ANCHORS))
 
     for s in structure["string_data"]:
@@ -169,6 +210,7 @@ def get_connection_candidates(structure):
 
 
 def get_existing_pairs(structure):
+    """すでに存在するひもの始点・終点ペアを取得する。"""
     existing_pairs = set()
     for s in structure["string_data"]:
         pair = tuple(sorted((s["start_node"], s["end_node"])))
@@ -177,6 +219,7 @@ def get_existing_pairs(structure):
 
 
 def choose_random_pair(structure, rng):
+    """現在の構造から、新しく接続する2点をランダムに選ぶ。"""
     candidates = get_connection_candidates(structure)
     if len(candidates) < 2:
         return None
@@ -185,14 +228,15 @@ def choose_random_pair(structure, rng):
     all_pairs = list(itertools.combinations(candidates, 2))
 
     MIN_HORIZONTAL_DISTANCE = 3.0
-    valid_pairs = []
 
+    valid_pairs = []
     for p in all_pairs:
         if tuple(sorted(p)) in existing_pairs:
             continue
 
         n1 = structure["nodes"][p[0]]
         n2 = structure["nodes"][p[1]]
+
         dx = abs(n2["x"] - n1["x"])
 
         if dx < MIN_HORIZONTAL_DISTANCE:
@@ -207,6 +251,7 @@ def choose_random_pair(structure, rng):
 
 
 def add_random_strings(structure, num_strings, rng):
+    """ランダムなひもを指定本数だけ追加する。"""
     added = 0
 
     for _ in range(num_strings):
@@ -222,6 +267,7 @@ def add_random_strings(structure, num_strings, rng):
 
 
 def simulate_structure(structure, steps=350, constraint_iterations=6):
+    """ひもの物理シミュレーションを行い、垂れ下がった形に落ち着かせる。"""
     nodes = structure["nodes"]
     links = structure["links"]
 
@@ -258,10 +304,13 @@ def simulate_structure(structure, steps=350, constraint_iterations=6):
 
 
 def relax_structure_copy(structure):
-    return deep_copy_structure(structure)
+    """既存構造を次候補の親として使う前にコピーする。"""
+    copied = deep_copy_structure(structure)
+    return copied
 
 
 def get_active_bounds(structure):
+    """描画範囲を現在の構造に合わせて決める。"""
     nodes = structure["nodes"]
 
     active_node_indices = set(range(NUM_ANCHORS))
@@ -278,30 +327,38 @@ def get_active_bounds(structure):
     return bottom_limit, half_width
 
 
-def draw_structure(structure, inverted=False, small=False, highlight_new=False):
+def draw_structure(structure, inverted=False, small=False, highlight_new=False, ai_clean=False):
+    """
+    構造をMatplotlibで描画し、PNGバイト列として返す。
+
+    ai_clean=True の場合：
+    AI入力用に、天井点と天井線を消して、骨組みの黒線だけにする。
+    """
     fig_size = (3.2, 3.2) if small else (8, 8)
     dpi = 90 if small else 150
     line_width = 2.0 if small else 4.5
     anchor_size = 35 if small else 120
 
     fig, ax = plt.subplots(figsize=fig_size)
+
     nodes = structure["nodes"]
 
-    ax.scatter(
-        [p["x"] for p in anchors],
-        [0] * NUM_ANCHORS,
-        color="#555555",
-        s=anchor_size,
-        zorder=10
-    )
-
-    ax.plot(
-        [-20, 20],
-        [0, 0],
-        color="#777777",
-        lw=2 if small else 4,
-        zorder=5
-    )
+    # AI入力用では、黒点と横線を消す
+    if not ai_clean:
+        ax.scatter(
+            [p["x"] for p in anchors],
+            [0] * NUM_ANCHORS,
+            color="#555555",
+            s=anchor_size,
+            zorder=10
+        )
+        ax.plot(
+            [-20, 20],
+            [0, 0],
+            color="#777777",
+            lw=2 if small else 4,
+            zorder=5
+        )
 
     parent_string_count = structure.get("parent_string_count", None)
 
@@ -350,7 +407,13 @@ def draw_structure(structure, inverted=False, small=False, highlight_new=False):
 
 
 def make_ai_input_image(structure):
-    image_bytes = draw_structure(structure, inverted=True, small=False)
+    """AIに渡すため、上下反転した骨組み画像を1024×1024に変換する。"""
+    image_bytes = draw_structure(
+        structure,
+        inverted=True,
+        small=False,
+        ai_clean=True
+    )
     raw_img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     resized_img = raw_img.resize((1024, 1024), Image.LANCZOS)
 
@@ -360,71 +423,104 @@ def make_ai_input_image(structure):
 
 
 # ============================================================
-# FLUX画像生成関数
+# AI画像生成関数
 # ============================================================
-def generate_castle_image_flux(image_bytes, prompt, key, model_name):
-    if not key:
-        try:
-            key = st.secrets.get("FAL_KEY", "")
-        except Exception:
-            key = ""
-
+def generate_castle_image_stability(image_bytes, prompt, key):
+    """Stability AI Control Structureで、骨組みを構造ガイドとして画像生成する。"""
     if not key:
         time.sleep(1.0)
         img = Image.new("RGB", (1024, 1024), color=(150, 160, 170))
         buf = io.BytesIO()
         img.save(buf, format="PNG")
-        st.warning("⚠️ fal.ai APIキーが入力されていないため、ダミー画像を表示しています。")
+        st.warning("⚠️ Stability AI APIキーが入力されていないため、ダミー画像を表示しています。")
         return buf.getvalue()
 
-    st.info(f"🌐 fal.ai / FLUX Kontextで生成中... 使用モデル: {model_name}")
+    st.info("🌐 Stability AI Control Structureで生成中...")
+
+    url = "https://api.stability.ai/v2beta/stable-image/control/structure"
 
     try:
-        os.environ["FAL_KEY"] = key
-        import fal_client
-
-        image_base64 = base64.b64encode(image_bytes).decode("utf-8")
-        image_data_uri = f"data:image/png;base64,{image_base64}"
-
-        full_prompt = prompt + """
-
-Important instruction:
-Use the input skeleton image as a structural reference.
-Preserve the main silhouette, arch rhythm, tower positions, and overall composition.
-Do not reproduce the original black guide lines, dots, baseline, graph-like marks, or wireframe.
-Convert the structure into a completed Gaudi-inspired architectural scene.
-"""
-
-        result = fal_client.subscribe(
-            model_name,
-            arguments={
-                "prompt": full_prompt,
-                "image_url": image_data_uri,
-                "guidance_scale": 3.5,
-                "num_images": 1,
-                "output_format": "png",
-                "safety_tolerance": "2",
+        response = requests.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {key}",
+                "Accept": "image/*"
             },
+            files={
+                "image": ("skeleton.png", image_bytes, "image/png")
+            },
+            data={
+                "prompt": prompt,
+                "control_strength": "0.45",
+                "output_format": "png",
+                "negative_prompt": (
+                    "visible guide lines, black curves, black hanging chains, exposed wireframe, "
+                    "scaffolding, skeleton lines, black dots, gray baseline, graph marks, blueprint, "
+                    "orthographic front view, flat elevation drawing, centered isolated object, "
+                    "toy model, miniature model, plain background, empty background, "
+                    "simple line drawing, unfinished sketch, low detail, text, watermark"
+                )
+            },
+            timeout=120
         )
 
-        if "images" not in result or len(result["images"]) == 0:
-            st.error("FLUXから画像URLが返ってきませんでした。")
-            with st.expander("fal.aiレスポンス確認"):
-                st.json(result)
+        if response.status_code != 200:
+            st.error(f"Stability AI APIエラーが発生しました: {response.status_code}")
+            st.code(response.text)
             return None
 
-        image_url = result["images"][0]["url"]
-        img_response = requests.get(image_url, timeout=60)
-
-        if img_response.status_code != 200:
-            st.error("生成画像URLから画像を取得できませんでした。")
-            st.code(img_response.text)
-            return None
-
-        return img_response.content
+        return response.content
 
     except Exception as e:
-        st.error(f"fal.ai / FLUX通信中にエラーが発生しました: {e}")
+        st.error(f"Stability AI通信中にエラーが発生しました: {e}")
+        return None
+
+
+def generate_castle_image_huggingface(image_bytes, prompt, token, provider, model_id):
+    """Hugging Face Inference Providersのimage-to-imageで画像生成する。"""
+    if not token:
+        st.warning("⚠️ Hugging Faceトークンが入力されていません。")
+        return None
+
+    st.info("🌐 Hugging Face Inference Providersで生成中...")
+
+    hf_prompt = prompt + """
+
+Use the uploaded skeleton image as a loose structural reference.
+Preserve the overall rhythm of arches and silhouette.
+Do not reproduce black guide lines.
+Create a completed architectural scene, not a diagram.
+"""
+
+    negative_prompt = (
+        "visible guide lines, black curves, black dots, wireframe, blueprint, "
+        "flat diagram, simple line drawing, text, watermark, low quality, blurry"
+    )
+
+    try:
+        client = InferenceClient(
+            provider=provider,
+            api_key=token
+        )
+
+        # Hugging Face公式のimage_to_image形式：
+        # input_image bytes + prompt + model
+        output_image = client.image_to_image(
+            image_bytes,
+            prompt=hf_prompt,
+            model=model_id,
+            negative_prompt=negative_prompt,
+            num_inference_steps=28,
+            guidance_scale=7.0
+        )
+
+        out_buf = io.BytesIO()
+        output_image.save(out_buf, format="PNG")
+        out_buf.seek(0)
+        return out_buf.getvalue()
+
+    except Exception as e:
+        st.error(f"Hugging Face通信中にエラーが発生しました: {e}")
         return None
 
 
@@ -432,6 +528,7 @@ Convert the structure into a completed Gaudi-inspired architectural scene.
 # 候補生成関数
 # ============================================================
 def make_initial_candidate(seed):
+    """最初の3本線を持つ候補を1つ作る。"""
     rng = random.Random(seed)
     structure = create_empty_structure()
     add_random_strings(structure, INITIAL_STRINGS, rng)
@@ -441,6 +538,7 @@ def make_initial_candidate(seed):
 
 
 def make_next_candidate(parent_structure, seed):
+    """選択済みの構造を親としてコピーし、そこからランダムに1本線を追加した候補を1つ作る。"""
     rng = random.Random(seed)
 
     structure = relax_structure_copy(parent_structure)
@@ -455,6 +553,7 @@ def make_next_candidate(parent_structure, seed):
 
 
 def generate_initial_candidates():
+    """最初の3本線の4候補を生成する。"""
     base_seed = random.randint(0, 10**9)
     st.session_state.candidates = [
         make_initial_candidate(base_seed + i * 1009)
@@ -463,6 +562,7 @@ def generate_initial_candidates():
 
 
 def generate_next_candidates_from_selected():
+    """選択済み構造を親として、1本追加した4候補を生成する。"""
     parent = st.session_state.selected_structure
     if parent is None:
         return
@@ -475,6 +575,7 @@ def generate_next_candidates_from_selected():
 
 
 def reset_app():
+    """アプリを最初の状態に戻す。"""
     for key in list(st.session_state.keys()):
         del st.session_state[key]
     st.rerun()
@@ -530,10 +631,8 @@ if st.session_state.app_phase == "choice":
                 continue
 
             candidate = candidates[idx]
-
             with cols[col]:
                 highlight_new = st.session_state.choice_step > 0
-
                 st.image(
                     draw_structure(candidate, inverted=False, small=True, highlight_new=highlight_new),
                     use_container_width=True
@@ -568,7 +667,6 @@ if st.session_state.app_phase == "choice":
                     st.rerun()
 
     st.markdown("---")
-
     if st.button("最初からやり直す", use_container_width=True):
         reset_app()
 
@@ -580,14 +678,12 @@ elif st.session_state.app_phase == "final":
     st.title("✅ 最終的な吊り構造")
 
     structure = st.session_state.selected_structure
-
     st.write("選択が完了しました。まずは、吊り下げた状態の最終形を表示しています。")
     st.image(draw_structure(structure, inverted=False, small=False), use_container_width=True)
 
     st.caption(f"最終的なひもの本数: {len(structure['string_data'])}本")
 
     col1, col2 = st.columns(2)
-
     with col1:
         if st.button("上下反転する", type="primary", use_container_width=True):
             st.session_state.app_phase = "inverted"
@@ -605,8 +701,7 @@ elif st.session_state.app_phase == "inverted":
     st.title("📐 上下反転した骨組み")
 
     structure = st.session_state.selected_structure
-
-    st.write("吊り下げた構造を上下反転しました。この画像をFLUX画像生成の入力に使います。")
+    st.write("吊り下げた構造を上下反転しました。この画像をAI画像生成の入力に使います。")
 
     ai_input_image_bytes = make_ai_input_image(structure)
     st.session_state.ai_input_image_bytes = ai_input_image_bytes
@@ -631,14 +726,14 @@ elif st.session_state.app_phase == "inverted":
 # 画面：AI生成フェーズ
 # ============================================================
 elif st.session_state.app_phase == "generate":
-    st.title("🏰 FLUX画像生成")
+    st.title("🏰 AI画像生成")
 
     structure = st.session_state.selected_structure
 
     if st.session_state.ai_input_image_bytes is None:
         st.session_state.ai_input_image_bytes = make_ai_input_image(structure)
 
-    st.caption(f"現在の生成モデル: {flux_model}")
+    st.caption(f"現在の生成方式: {generation_mode}")
 
     col1, col2 = st.columns(2)
 
@@ -647,16 +742,26 @@ elif st.session_state.app_phase == "generate":
         st.image(st.session_state.ai_input_image_bytes, use_container_width=True)
 
     with col2:
-        st.subheader("🎨 FLUX生成結果")
+        st.subheader("🎨 AI生成結果")
 
         if st.session_state.generated_image_bytes is None:
-            with st.spinner("FLUXがレンダリングしています..."):
-                st.session_state.generated_image_bytes = generate_castle_image_flux(
-                    st.session_state.ai_input_image_bytes,
-                    user_prompt,
-                    fal_api_key,
-                    flux_model
-                )
+            with st.spinner("AIがレンダリングしています..."):
+
+                if generation_mode == "Stability AI Control Structure":
+                    st.session_state.generated_image_bytes = generate_castle_image_stability(
+                        st.session_state.ai_input_image_bytes,
+                        user_prompt,
+                        api_key
+                    )
+
+                elif generation_mode == "Hugging Face Inference Providers":
+                    st.session_state.generated_image_bytes = generate_castle_image_huggingface(
+                        st.session_state.ai_input_image_bytes,
+                        user_prompt,
+                        hf_token,
+                        hf_provider,
+                        hf_model_id
+                    )
 
         if st.session_state.generated_image_bytes:
             st.image(st.session_state.generated_image_bytes, use_container_width=True)
