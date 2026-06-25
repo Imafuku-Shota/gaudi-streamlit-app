@@ -5,3 +5,4 @@ requests
 pillow
 google-genai
 fal-client
+huggingface_hub
