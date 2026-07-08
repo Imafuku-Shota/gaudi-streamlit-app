@@ -95,6 +95,107 @@ def format_node_label(idx):
     return f"ひも {s_id + 1} の中央"
 
 
+def get_active_strings(structure):
+    """削除されていない有効なひもだけを返す。"""
+    return [
+        s for s in structure["string_data"]
+        if not s.get("is_deleted", False)
+    ]
+
+
+def count_active_strings(structure):
+    """削除されていない有効なひもの本数を数える。"""
+    return len(get_active_strings(structure))
+
+
+def get_string_middle_node(s):
+    """指定したひもの中央ノード番号を返す。"""
+    base = NUM_ANCHORS + s["id"] * NUM_INTERNAL_NODES
+    return base + MID_NODE_OFFSET
+
+
+def get_string_node_indices(s):
+    """指定したひもを構成するノード番号の一覧を返す。"""
+    base = NUM_ANCHORS + s["id"] * NUM_INTERNAL_NODES
+    return (
+        [s["start_node"]]
+        + list(range(base, base + NUM_INTERNAL_NODES))
+        + [s["end_node"]]
+    )
+
+
+def get_string_bottom_y(structure, s):
+    """
+    指定したひもの一番下のy座標を返す。
+    このコードでは、下に垂れるほど y が小さくなるので min を使う。
+    """
+    nodes = structure["nodes"]
+    node_indices = get_string_node_indices(s)
+
+    ys = [
+        nodes[i]["y"]
+        for i in node_indices
+        if 0 <= i < len(nodes)
+    ]
+
+    if not ys:
+        return 0.0
+
+    return min(ys)
+
+
+def string_has_child(target_s, active_strings):
+    """
+    target_s の中央点に、他の有効なひもが接続しているか確認する。
+    接続している場合、そのひもを削除すると他のひもの接続先が壊れるため、削除対象にしない。
+    """
+    middle_node = get_string_middle_node(target_s)
+
+    for other in active_strings:
+        if other["id"] == target_s["id"]:
+            continue
+
+        if other["start_node"] == middle_node or other["end_node"] == middle_node:
+            return True
+
+    return False
+
+
+def get_leaf_strings(structure):
+    """
+    何もぶら下がっていない末端のひもだけを返す。
+    つまり、そのひもの中央点に他のひもが接続していないものだけを返す。
+    """
+    active_strings = get_active_strings(structure)
+    leaf_strings = []
+
+    for s in active_strings:
+        if not string_has_child(s, active_strings):
+            leaf_strings.append(s)
+
+    return leaf_strings
+
+
+def choose_bottom_leaf_string(structure, rng):
+    """
+    削除可能な末端のひもの中から、一番下にあるひもを選ぶ。
+    一番下の高さが同じものが複数ある場合は、その中からランダムに選ぶ。
+    """
+    leaf_strings = get_leaf_strings(structure)
+
+    if not leaf_strings:
+        return None
+
+    bottom_y = min(get_string_bottom_y(structure, s) for s in leaf_strings)
+
+    bottom_leaf_strings = [
+        s for s in leaf_strings
+        if abs(get_string_bottom_y(structure, s) - bottom_y) < 1e-6
+    ]
+
+    return rng.choice(bottom_leaf_strings)
+
+
 def add_string_to_structure(structure, idx1, idx2):
     """指定した2点の間に、新しいひもを1本追加する。"""
     nodes = structure["nodes"]
@@ -148,7 +249,7 @@ def add_string_to_structure(structure, idx1, idx2):
         "end_node": idx2,
         "first_link_idx": first_link_idx,
         "last_link_idx": len(links) - 1,
-        "is_deleted": False  # 削除フラグを追加
+        "is_deleted": False
     })
 
     structure.setdefault("added_pairs", []).append((idx1, idx2))
@@ -157,14 +258,15 @@ def add_string_to_structure(structure, idx1, idx2):
 
 
 def get_connection_candidates(structure):
-    """次にひもを接続できる候補点を返す（削除されたひもは除外）。"""
+    """次にひもを接続できる候補点を返す。削除されたひもは除外する。"""
     candidates = list(range(NUM_ANCHORS))
 
     for s in structure["string_data"]:
         if s.get("is_deleted", False):
             continue
-        base = NUM_ANCHORS + s["id"] * NUM_INTERNAL_NODES
-        middle_node = base + MID_NODE_OFFSET
+
+        middle_node = get_string_middle_node(s)
+
         if 0 <= middle_node < len(structure["nodes"]):
             candidates.append(middle_node)
 
@@ -172,13 +274,16 @@ def get_connection_candidates(structure):
 
 
 def get_existing_pairs(structure):
-    """すでに存在するひもの始点・終点ペアを取得する（削除されたものは除外）。"""
+    """すでに存在するひもの始点・終点ペアを取得する。削除されたものは除外する。"""
     existing_pairs = set()
+
     for s in structure["string_data"]:
         if s.get("is_deleted", False):
             continue
+
         pair = tuple(sorted((s["start_node"], s["end_node"])))
         existing_pairs.add(pair)
+
     return existing_pairs
 
 
@@ -216,18 +321,21 @@ def choose_random_pair(structure, rng):
 def add_random_strings(structure, num_strings, rng):
     """ランダムなひもを指定本数だけ追加する。"""
     added = 0
+
     for _ in range(num_strings):
         pair = choose_random_pair(structure, rng)
         if pair is None:
             break
+
         ok = add_string_to_structure(structure, pair[0], pair[1])
         if ok:
             added += 1
+
     return added
 
 
 def simulate_structure(structure, steps=350, constraint_iterations=6):
-    """ひ目の物理シミュレーションを行い、垂れ下がった形に落ち着かせる。"""
+    """ひもの物理シミュレーションを行い、垂れ下がった形に落ち着かせる。"""
     nodes = structure["nodes"]
     links = structure["links"]
 
@@ -243,8 +351,9 @@ def simulate_structure(structure, steps=350, constraint_iterations=6):
 
         for _ in range(constraint_iterations):
             for idx1, idx2, target_dist in links:
-                if idx1 == 0 and idx2 == 0:  # 撤去されたリンクはスキップ
+                if idx1 == 0 and idx2 == 0:
                     continue
+
                 n1, n2 = nodes[idx1], nodes[idx2]
 
                 dx = n2["x"] - n1["x"]
@@ -266,18 +375,21 @@ def simulate_structure(structure, steps=350, constraint_iterations=6):
 
 
 def relax_structure_copy(structure):
+    """選択済み構造を直接変更しないためにコピーする。"""
     copied = deep_copy_structure(structure)
     return copied
 
 
 def get_active_bounds(structure):
-    """描画範囲を現在の構造に合わせて決める（削除されたひもは計算から除外）。"""
+    """描画範囲を現在の構造に合わせて決める。削除されたひもは計算から除外する。"""
     nodes = structure["nodes"]
 
     active_node_indices = set(range(NUM_ANCHORS))
+
     for s in structure["string_data"]:
         if s.get("is_deleted", False):
             continue
+
         base = NUM_ANCHORS + s["id"] * NUM_INTERNAL_NODES
         active_node_indices.update(range(base, base + NUM_INTERNAL_NODES))
 
@@ -300,27 +412,41 @@ def draw_structure(structure, inverted=False, small=False, highlight_new=False):
     fig, ax = plt.subplots(figsize=fig_size)
     nodes = structure["nodes"]
 
-    ax.scatter([p["x"] for p in anchors], [0] * NUM_ANCHORS, color="#555555", s=anchor_size, zorder=10)
-    ax.plot([-20, 20], [0, 0], color="#777777", lw=2 if small else 4, zorder=5)
+    ax.scatter(
+        [p["x"] for p in anchors],
+        [0] * NUM_ANCHORS,
+        color="#555555",
+        s=anchor_size,
+        zorder=10
+    )
+    ax.plot(
+        [-20, 20],
+        [0, 0],
+        color="#777777",
+        lw=2 if small else 4,
+        zorder=5
+    )
 
     parent_string_count = structure.get("parent_string_count", None)
 
     for s in structure["string_data"]:
         if s.get("is_deleted", False):
             continue
-        base = NUM_ANCHORS + s["id"] * NUM_INTERNAL_NODES
-        node_indices = [s["start_node"]] + list(range(base, base + NUM_INTERNAL_NODES)) + [s["end_node"]]
+
+        node_indices = get_string_node_indices(s)
 
         xs = [nodes[i]["x"] for i in node_indices if 0 <= i < len(nodes)]
         ys = [nodes[i]["y"] for i in node_indices if 0 <= i < len(nodes)]
 
-        # 【変更】新しく変化(追加・つなぎ直し)があったひもを青くハイライト
         is_highlighted = False
         if highlight_new:
             if "highlighted_string_id" in structure:
                 is_highlighted = (s["id"] == structure["highlighted_string_id"])
             else:
-                is_highlighted = (parent_string_count is not None and s["id"] >= parent_string_count)
+                is_highlighted = (
+                    parent_string_count is not None
+                    and s["id"] >= parent_string_count
+                )
 
         color = "#1C83E1" if is_highlighted else "black"
         lw = line_width + 1.0 if is_highlighted else line_width
@@ -354,6 +480,7 @@ def draw_structure(structure, inverted=False, small=False, highlight_new=False):
 
 
 def make_ai_input_image(structure):
+    """AIに渡すため、上下反転した骨組み画像を1024×1024に変換する。"""
     image_bytes = draw_structure(structure, inverted=True, small=False)
     raw_img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     resized_img = raw_img.resize((1024, 1024), Image.LANCZOS)
@@ -364,6 +491,7 @@ def make_ai_input_image(structure):
 
 
 def generate_castle_image(image_bytes, prompt, key):
+    """Stability AI Control Structureで、骨組みを構造ガイドとして画像生成する。"""
     if not key:
         time.sleep(1.0)
         img = Image.new("RGB", (1024, 1024), color=(150, 160, 170))
@@ -416,93 +544,130 @@ def make_initial_candidate(seed):
     add_random_strings(structure, INITIAL_STRINGS, rng)
     simulate_structure(structure)
     structure["parent_string_count"] = 0
+    structure["action_performed"] = "initial"
+    structure["actually_added"] = INITIAL_STRINGS
+    return structure
+
+
+def add_action(structure, rng):
+    """ひもを1本追加する処理。"""
+    added = add_random_strings(structure, ADD_STRINGS_PER_ROUND, rng)
+    simulate_structure(structure)
+
+    structure["action_performed"] = "add"
+    structure["actually_added"] = added
+
+    if added > 0:
+        structure["highlighted_string_id"] = structure["string_data"][-1]["id"]
+
+    return structure
+
+
+def delete_action(structure, rng):
+    """
+    ひもを1本削除する処理。
+    削除対象は、何もぶら下がっていない末端のひもの中で一番下にあるものに限定する。
+    """
+    target_s = choose_bottom_leaf_string(structure, rng)
+
+    if target_s is None:
+        return add_action(structure, rng)
+
+    structure["action_performed"] = "delete"
+    structure["actually_added"] = 0
+
+    target_s["is_deleted"] = True
+
+    for i in range(target_s["first_link_idx"], target_s["last_link_idx"] + 1):
+        structure["links"][i] = (0, 0, 0)
+
+    base = NUM_ANCHORS + target_s["id"] * NUM_INTERNAL_NODES
+    for i in range(base, base + NUM_INTERNAL_NODES):
+        if 0 <= i < len(structure["nodes"]):
+            structure["nodes"][i]["fixed"] = True
+            structure["nodes"][i]["x"] = 0.0
+            structure["nodes"][i]["y"] = 9999.0
+
+    simulate_structure(structure)
+
+    return structure
+
+
+def reconnect_action(structure, rng):
+    """既存ひもの片端を別の有効な候補点へつなぎ直す処理。"""
+    active_strings = get_active_strings(structure)
+
+    if not active_strings:
+        return add_action(structure, rng)
+
+    target_s = rng.choice(active_strings)
+    end_type = rng.choice(["start", "end"])
+
+    candidates = get_connection_candidates(structure)
+    current_start = target_s["start_node"]
+    current_end = target_s["end_node"]
+    my_mid = get_string_middle_node(target_s)
+
+    available_cands = [
+        c for c in candidates
+        if c != current_start
+        and c != current_end
+        and c != my_mid
+    ]
+
+    if not available_cands:
+        return add_action(structure, rng)
+
+    new_target = rng.choice(available_cands)
+
+    if end_type == "start":
+        l_idx = target_s["first_link_idx"]
+        old_l = structure["links"][l_idx]
+        structure["links"][l_idx] = (new_target, old_l[1], old_l[2])
+        target_s["start_node"] = new_target
+    else:
+        l_idx = target_s["last_link_idx"]
+        old_l = structure["links"][l_idx]
+        structure["links"][l_idx] = (old_l[0], new_target, old_l[2])
+        target_s["end_node"] = new_target
+
+    structure["action_performed"] = "reconnect"
+    structure["actually_added"] = 0
+    structure["highlighted_string_id"] = target_s["id"]
+
+    simulate_structure(structure)
+
     return structure
 
 
 # ============================================================
-# 【大改造】2回目以降：追加・削除・つなぎ直しをランダムにする候補生成
+# 2回目以降：追加・削除・つなぎ直しをランダムにする候補生成
 # ============================================================
 def make_next_candidate(parent_structure, seed):
     rng = random.Random(seed)
     structure = relax_structure_copy(parent_structure)
-    
-    # 有効な（削除されていない）親のひも本数
-    parent_count = len([s for s in parent_structure["string_data"] if not s.get("is_deleted", False)])
+
+    parent_count = count_active_strings(parent_structure)
     structure["parent_string_count"] = parent_count
 
-    # 現在残っている有効なひも
-    active_strings = [s for s in structure["string_data"] if not s.get("is_deleted", False)]
+    active_strings = get_active_strings(structure)
 
-    # どのアクションを実行するかランダムに決定 ('add', 'delete', 'reconnect')
     if not active_strings:
-        action = 'add'
+        action = "add"
     else:
-        action = rng.choice(['add', 'delete', 'reconnect'])
+        action = rng.choice(["add", "delete", "reconnect"])
 
     structure["action_performed"] = action
     structure["actually_added"] = 0
 
-    if action == 'add':
-        # 🟢 ひもを追加
-        added = add_random_strings(structure, ADD_STRINGS_PER_ROUND, rng)
-        simulate_structure(structure)
-        structure["actually_added"] = added
-        if added > 0:
-            structure["highlighted_string_id"] = structure["string_data"][-1]["id"]
+    if action == "add":
+        structure = add_action(structure, rng)
 
-    elif action == 'delete':
-        # 🗑️ ひもを削除（リンクを切り、内部ノードを画面外に固定する）
-        target_s = rng.choice(active_strings)
-        target_s["is_deleted"] = True
-        
-        for i in range(target_s["first_link_idx"], target_s["last_link_idx"] + 1):
-            structure["links"][i] = (0, 0, 0)
-            
-        base = NUM_ANCHORS + target_s["id"] * NUM_INTERNAL_NODES
-        for i in range(base, base + NUM_INTERNAL_NODES):
-            structure["nodes"][i]["fixed"] = True
-            structure["nodes"][i]["x"] = 0.0
-            structure["nodes"][i]["y"] = 9999.0  # カメラ範囲外へ
-            
-        simulate_structure(structure)
+    elif action == "delete":
+        structure = delete_action(structure, rng)
 
-    elif action == 'reconnect':
-        # 🔄 ひもをつなぎ直す（片端を選び、別の有効な候補点へ書き換える）
-        target_s = rng.choice(active_strings)
-        end_type = rng.choice(['start', 'end'])
-
-        candidates = get_connection_candidates(structure)
-        current_start = target_s["start_node"]
-        current_end = target_s["end_node"]
-        base = NUM_ANCHORS + target_s["id"] * NUM_INTERNAL_NODES
-        my_mid = base + MID_NODE_OFFSET
-
-        # 自分自身の中央や、現在の両端は避ける
-        available_cands = [c for c in candidates if c != current_start and c != current_end and c != my_mid]
-
-        if available_cands:
-            new_target = rng.choice(available_cands)
-            if end_type == 'start':
-                l_idx = target_s["first_link_idx"]
-                old_l = structure["links"][l_idx]
-                structure["links"][l_idx] = (new_target, old_l[1], old_l[2])
-                target_s["start_node"] = new_target
-            else:
-                l_idx = target_s["last_link_idx"]
-                old_l = structure["links"][l_idx]
-                structure["links"][l_idx] = (old_l[0], new_target, old_l[2])
-                target_s["end_node"] = new_target
-
-            structure["highlighted_string_id"] = target_s["id"]
-            simulate_structure(structure)
-        else:
-            # つなぎ直し候補がなければフォールバック（追加処理）
-            structure["action_performed"] = 'add'
-            added = add_random_strings(structure, ADD_STRINGS_PER_ROUND, rng)
-            simulate_structure(structure)
-            structure["actually_added"] = added
-            if added > 0:
-                structure["highlighted_string_id"] = structure["string_data"][-1]["id"]
+    elif action == "reconnect":
+        structure = reconnect_action(structure, rng)
 
     return structure
 
@@ -566,6 +731,27 @@ if st.session_state.app_phase == "choice":
 
     total_choices = 1 + ADDITION_ROUNDS
 
+    # 2回目以降は、前回選択した骨組みを画面上部に表示する
+    if st.session_state.choice_step > 0 and st.session_state.selected_structure is not None:
+        st.subheader("前回選択した骨組み")
+
+        selected_count = count_active_strings(st.session_state.selected_structure)
+
+        selected_cols = st.columns([1, 2, 1])
+        with selected_cols[1]:
+            st.image(
+                draw_structure(
+                    st.session_state.selected_structure,
+                    inverted=False,
+                    small=True,
+                    highlight_new=False
+                ),
+                use_container_width=True
+            )
+            st.caption(f"選択中の骨組み：ひも {selected_count}本")
+
+        st.markdown("---")
+
     if st.session_state.choice_step == 0:
         st.write("最初に、ランダムに3本のひもを作った候補を4つ表示しています。")
     else:
@@ -586,26 +772,40 @@ if st.session_state.app_phase == "choice":
                 continue
 
             candidate = candidates[idx]
+
             with cols[col]:
                 highlight_new = st.session_state.choice_step > 0
+
                 st.image(
-                    draw_structure(candidate, inverted=False, small=True, highlight_new=highlight_new),
+                    draw_structure(
+                        candidate,
+                        inverted=False,
+                        small=True,
+                        highlight_new=highlight_new
+                    ),
                     use_container_width=True
                 )
 
-                # 有効なひもの本数を正確にカウント
-                current_count = len([s for s in candidate["string_data"] if not s.get("is_deleted", False)])
+                current_count = count_active_strings(candidate)
 
-                # 【変更】2回目以降は、どのアクションが起きたかをアイコン付きで分かりやすく表示
                 if st.session_state.choice_step == 0:
                     st.caption(f"案 {idx + 1}：初期ひも {current_count}本")
                 else:
-                    action_labels = {'add': '🟢 ひも追加', 'delete': '🗑️ ひも削除', 'reconnect': '🔄 つなぎ直し'}
+                    action_labels = {
+                        "add": "🟢 ひも追加",
+                        "delete": "🗑️ ひも削除",
+                        "reconnect": "🔄 つなぎ直し",
+                        "initial": "初期ひも"
+                    }
                     act = candidate.get("action_performed", "add")
                     label = action_labels.get(act, "ひも追加")
                     st.caption(f"案 {idx + 1}：{label} (計 {current_count}本)")
 
-                if st.button(f"案 {idx + 1} を選択", key=f"select_{st.session_state.choice_step}_{idx}", use_container_width=True):
+                if st.button(
+                    f"案 {idx + 1} を選択",
+                    key=f"select_{st.session_state.choice_step}_{idx}",
+                    use_container_width=True
+                ):
                     st.session_state.selected_structure = deep_copy_structure(candidate)
                     st.session_state.generated_image_bytes = None
                     st.session_state.ai_input_image_bytes = None
@@ -633,7 +833,7 @@ elif st.session_state.app_phase == "final":
     st.write("選択が完了しました。まずは、吊り下げた状態の最終形を表示しています。")
     st.image(draw_structure(structure, inverted=False, small=False), use_container_width=True)
 
-    final_count = len([s for s in structure['string_data'] if not s.get("is_deleted", False)])
+    final_count = count_active_strings(structure)
     st.caption(f"最終的なひもの本数: {final_count}本")
 
     col1, col2 = st.columns(2)
