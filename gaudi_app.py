@@ -7,7 +7,6 @@ import requests
 import random
 import itertools
 from PIL import Image
-from huggingface_hub import InferenceClient
 
 st.set_page_config(layout="centered")
 
@@ -22,11 +21,10 @@ NUM_NEW_NODES = 41
 NUM_INTERNAL_NODES = NUM_NEW_NODES - 2
 MID_NODE_OFFSET = NUM_INTERNAL_NODES // 2
 
-NUM_CHOICES = 4
-INITIAL_STRINGS = 3
-ADD_STRINGS_PER_ROUND = 1
-ADDITION_ROUNDS = 4
-FINAL_STRING_COUNT = INITIAL_STRINGS + ADD_STRINGS_PER_ROUND * ADDITION_ROUNDS
+NUM_CHOICES = 4                # 各段階で表示する候補数
+INITIAL_STRINGS = 3            # 最初に作る線の数
+ADD_STRINGS_PER_ROUND = 1      # 選択後に追加する線の数
+ADDITION_ROUNDS = 4            # 選択回数
 
 GRAVITY = 0.08
 STIFFNESS = 0.95
@@ -36,15 +34,7 @@ DAMPING = 0.75
 # サイドバー：API設定とプロンプト
 # ============================================================
 st.sidebar.title("⚙️ AI生成設定")
-st.sidebar.markdown("APIキーが未入力の場合は、ダミー画像またはエラー表示になります。")
-
-generation_mode = st.sidebar.selectbox(
-    "生成方式",
-    [
-        "Stability AI Control Structure",
-        "Hugging Face Inference Providers"
-    ]
-)
+st.sidebar.markdown("APIキーが未入力の場合は、ダミー画像を表示します。")
 
 api_key = st.sidebar.text_input(
     "APIキー (Stability AI)",
@@ -52,32 +42,7 @@ api_key = st.sidebar.text_input(
     help="Stability AIのAPIキーを入力してください"
 )
 
-hf_token = st.sidebar.text_input(
-    "APIトークン (Hugging Face)",
-    type="password",
-    help="Hugging Faceの hf_... で始まるアクセストークンを入力してください"
-)
-
-hf_provider = st.sidebar.selectbox(
-    "Hugging Face Provider",
-    [
-        "fal-ai",
-        "replicate"
-    ],
-    help="まずは fal-ai で試してください。うまくいかない場合は replicate を試します。"
-)
-
-hf_model_id = st.sidebar.selectbox(
-    "Hugging Faceモデル",
-    [
-        "black-forest-labs/FLUX.1-Kontext-dev",
-        "black-forest-labs/FLUX.2-dev"
-    ],
-    help="まずは FLUX.1-Kontext-dev で試してください。"
-)
-
 st.sidebar.markdown("---")
-
 user_prompt = st.sidebar.text_area(
     "生成プロンプト",
     value="""Transform this structural skeleton into a completed Gaudi-inspired fantasy castle integrated into a dramatic landscape.
@@ -123,10 +88,7 @@ def deep_copy_structure(structure):
 def format_node_label(idx):
     """ノード番号を画面表示用の名前に変換する。"""
     if idx < NUM_ANCHORS:
-        positions = [
-            "一番左", "左から2番目", "左から3番目", "中央の左",
-            "中央の右", "右から3番目", "右から2番目", "一番右"
-        ]
+        positions = ["一番左", "左から2番目", "左から3番目", "中央の左", "中央の右", "右から3番目", "右から2番目", "一番右"]
         return f"天井 {idx + 1} ({positions[idx]})"
 
     s_id = (idx - NUM_ANCHORS) // NUM_INTERNAL_NODES
@@ -185,7 +147,8 @@ def add_string_to_structure(structure, idx1, idx2):
         "start_node": idx1,
         "end_node": idx2,
         "first_link_idx": first_link_idx,
-        "last_link_idx": len(links) - 1
+        "last_link_idx": len(links) - 1,
+        "is_deleted": False  # 削除フラグを追加
     })
 
     structure.setdefault("added_pairs", []).append((idx1, idx2))
@@ -194,13 +157,12 @@ def add_string_to_structure(structure, idx1, idx2):
 
 
 def get_connection_candidates(structure):
-    """
-    次にひもを接続できる候補点を返す。
-    候補は、8個の天井点と、既存ひもの中央点。
-    """
+    """次にひもを接続できる候補点を返す（削除されたひもは除外）。"""
     candidates = list(range(NUM_ANCHORS))
 
     for s in structure["string_data"]:
+        if s.get("is_deleted", False):
+            continue
         base = NUM_ANCHORS + s["id"] * NUM_INTERNAL_NODES
         middle_node = base + MID_NODE_OFFSET
         if 0 <= middle_node < len(structure["nodes"]):
@@ -210,9 +172,11 @@ def get_connection_candidates(structure):
 
 
 def get_existing_pairs(structure):
-    """すでに存在するひもの始点・終点ペアを取得する。"""
+    """すでに存在するひもの始点・終点ペアを取得する（削除されたものは除外）。"""
     existing_pairs = set()
     for s in structure["string_data"]:
+        if s.get("is_deleted", False):
+            continue
         pair = tuple(sorted((s["start_node"], s["end_node"])))
         existing_pairs.add(pair)
     return existing_pairs
@@ -236,7 +200,6 @@ def choose_random_pair(structure, rng):
 
         n1 = structure["nodes"][p[0]]
         n2 = structure["nodes"][p[1]]
-
         dx = abs(n2["x"] - n1["x"])
 
         if dx < MIN_HORIZONTAL_DISTANCE:
@@ -253,21 +216,18 @@ def choose_random_pair(structure, rng):
 def add_random_strings(structure, num_strings, rng):
     """ランダムなひもを指定本数だけ追加する。"""
     added = 0
-
     for _ in range(num_strings):
         pair = choose_random_pair(structure, rng)
         if pair is None:
             break
-
         ok = add_string_to_structure(structure, pair[0], pair[1])
         if ok:
             added += 1
-
     return added
 
 
 def simulate_structure(structure, steps=350, constraint_iterations=6):
-    """ひもの物理シミュレーションを行い、垂れ下がった形に落ち着かせる。"""
+    """ひ目の物理シミュレーションを行い、垂れ下がった形に落ち着かせる。"""
     nodes = structure["nodes"]
     links = structure["links"]
 
@@ -283,6 +243,8 @@ def simulate_structure(structure, steps=350, constraint_iterations=6):
 
         for _ in range(constraint_iterations):
             for idx1, idx2, target_dist in links:
+                if idx1 == 0 and idx2 == 0:  # 撤去されたリンクはスキップ
+                    continue
                 n1, n2 = nodes[idx1], nodes[idx2]
 
                 dx = n2["x"] - n1["x"]
@@ -304,17 +266,18 @@ def simulate_structure(structure, steps=350, constraint_iterations=6):
 
 
 def relax_structure_copy(structure):
-    """既存構造を次候補の親として使う前にコピーする。"""
     copied = deep_copy_structure(structure)
     return copied
 
 
 def get_active_bounds(structure):
-    """描画範囲を現在の構造に合わせて決める。"""
+    """描画範囲を現在の構造に合わせて決める（削除されたひもは計算から除外）。"""
     nodes = structure["nodes"]
 
     active_node_indices = set(range(NUM_ANCHORS))
     for s in structure["string_data"]:
+        if s.get("is_deleted", False):
+            continue
         base = NUM_ANCHORS + s["id"] * NUM_INTERNAL_NODES
         active_node_indices.update(range(base, base + NUM_INTERNAL_NODES))
 
@@ -327,57 +290,41 @@ def get_active_bounds(structure):
     return bottom_limit, half_width
 
 
-def draw_structure(structure, inverted=False, small=False, highlight_new=False, ai_clean=False):
-    """
-    構造をMatplotlibで描画し、PNGバイト列として返す。
-
-    ai_clean=True の場合：
-    AI入力用に、天井点と天井線を消して、骨組みの黒線だけにする。
-    """
+def draw_structure(structure, inverted=False, small=False, highlight_new=False):
+    """構造をMatplotlibで描画し、PNGバイト列として返す。"""
     fig_size = (3.2, 3.2) if small else (8, 8)
     dpi = 90 if small else 150
     line_width = 2.0 if small else 4.5
     anchor_size = 35 if small else 120
 
     fig, ax = plt.subplots(figsize=fig_size)
-
     nodes = structure["nodes"]
 
-    # AI入力用では、黒点と横線を消す
-    if not ai_clean:
-        ax.scatter(
-            [p["x"] for p in anchors],
-            [0] * NUM_ANCHORS,
-            color="#555555",
-            s=anchor_size,
-            zorder=10
-        )
-        ax.plot(
-            [-20, 20],
-            [0, 0],
-            color="#777777",
-            lw=2 if small else 4,
-            zorder=5
-        )
+    ax.scatter([p["x"] for p in anchors], [0] * NUM_ANCHORS, color="#555555", s=anchor_size, zorder=10)
+    ax.plot([-20, 20], [0, 0], color="#777777", lw=2 if small else 4, zorder=5)
 
     parent_string_count = structure.get("parent_string_count", None)
 
     for s in structure["string_data"]:
+        if s.get("is_deleted", False):
+            continue
         base = NUM_ANCHORS + s["id"] * NUM_INTERNAL_NODES
         node_indices = [s["start_node"]] + list(range(base, base + NUM_INTERNAL_NODES)) + [s["end_node"]]
 
         xs = [nodes[i]["x"] for i in node_indices if 0 <= i < len(nodes)]
         ys = [nodes[i]["y"] for i in node_indices if 0 <= i < len(nodes)]
 
-        is_new_string = (
-            highlight_new
-            and parent_string_count is not None
-            and s["id"] >= parent_string_count
-        )
+        # 【変更】新しく変化(追加・つなぎ直し)があったひもを青くハイライト
+        is_highlighted = False
+        if highlight_new:
+            if "highlighted_string_id" in structure:
+                is_highlighted = (s["id"] == structure["highlighted_string_id"])
+            else:
+                is_highlighted = (parent_string_count is not None and s["id"] >= parent_string_count)
 
-        color = "#1C83E1" if is_new_string else "black"
-        lw = line_width + 1.0 if is_new_string else line_width
-        z_order = 8 if is_new_string else 6
+        color = "#1C83E1" if is_highlighted else "black"
+        lw = line_width + 1.0 if is_highlighted else line_width
+        z_order = 8 if is_highlighted else 6
 
         ax.plot(
             xs,
@@ -407,13 +354,7 @@ def draw_structure(structure, inverted=False, small=False, highlight_new=False, 
 
 
 def make_ai_input_image(structure):
-    """AIに渡すため、上下反転した骨組み画像を1024×1024に変換する。"""
-    image_bytes = draw_structure(
-        structure,
-        inverted=True,
-        small=False,
-        ai_clean=True
-    )
+    image_bytes = draw_structure(structure, inverted=True, small=False)
     raw_img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     resized_img = raw_img.resize((1024, 1024), Image.LANCZOS)
 
@@ -422,21 +363,16 @@ def make_ai_input_image(structure):
     return out_buf.getvalue()
 
 
-# ============================================================
-# AI画像生成関数
-# ============================================================
-def generate_castle_image_stability(image_bytes, prompt, key):
-    """Stability AI Control Structureで、骨組みを構造ガイドとして画像生成する。"""
+def generate_castle_image(image_bytes, prompt, key):
     if not key:
         time.sleep(1.0)
         img = Image.new("RGB", (1024, 1024), color=(150, 160, 170))
         buf = io.BytesIO()
         img.save(buf, format="PNG")
-        st.warning("⚠️ Stability AI APIキーが入力されていないため、ダミー画像を表示しています。")
+        st.warning("⚠️ APIキーが入力されていないため、ダミー画像を表示しています。")
         return buf.getvalue()
 
     st.info("🌐 Stability AI Control Structureで生成中...")
-
     url = "https://api.stability.ai/v2beta/stable-image/control/structure"
 
     try:
@@ -454,10 +390,7 @@ def generate_castle_image_stability(image_bytes, prompt, key):
                 "control_strength": "0.45",
                 "output_format": "png",
                 "negative_prompt": (
-                    "visible guide lines, black curves, black hanging chains, exposed wireframe, "
-                    "scaffolding, skeleton lines, black dots, gray baseline, graph marks, blueprint, "
-                    "orthographic front view, flat elevation drawing, centered isolated object, "
-                    "toy model, miniature model, plain background, empty background, "
+                    "black guide lines, dots, graph marks, wireframe, blueprint, "
                     "simple line drawing, unfinished sketch, low detail, text, watermark"
                 )
             },
@@ -465,68 +398,17 @@ def generate_castle_image_stability(image_bytes, prompt, key):
         )
 
         if response.status_code != 200:
-            st.error(f"Stability AI APIエラーが発生しました: {response.status_code}")
+            st.error(f"APIエラーが発生しました: {response.status_code}")
             st.code(response.text)
             return None
 
         return response.content
 
     except Exception as e:
-        st.error(f"Stability AI通信中にエラーが発生しました: {e}")
+        st.error(f"通信中にエラーが発生しました: {e}")
         return None
 
 
-def generate_castle_image_huggingface(image_bytes, prompt, token, provider, model_id):
-    """Hugging Face Inference Providersのimage-to-imageで画像生成する。"""
-    if not token:
-        st.warning("⚠️ Hugging Faceトークンが入力されていません。")
-        return None
-
-    st.info("🌐 Hugging Face Inference Providersで生成中...")
-
-    hf_prompt = prompt + """
-
-Use the uploaded skeleton image as a loose structural reference.
-Preserve the overall rhythm of arches and silhouette.
-Do not reproduce black guide lines.
-Create a completed architectural scene, not a diagram.
-"""
-
-    negative_prompt = (
-        "visible guide lines, black curves, black dots, wireframe, blueprint, "
-        "flat diagram, simple line drawing, text, watermark, low quality, blurry"
-    )
-
-    try:
-        client = InferenceClient(
-            provider=provider,
-            api_key=token
-        )
-
-        # Hugging Face公式のimage_to_image形式：
-        # input_image bytes + prompt + model
-        output_image = client.image_to_image(
-            image_bytes,
-            prompt=hf_prompt,
-            model=model_id,
-            negative_prompt=negative_prompt,
-            num_inference_steps=28,
-            guidance_scale=7.0
-        )
-
-        out_buf = io.BytesIO()
-        output_image.save(out_buf, format="PNG")
-        out_buf.seek(0)
-        return out_buf.getvalue()
-
-    except Exception as e:
-        st.error(f"Hugging Face通信中にエラーが発生しました: {e}")
-        return None
-
-
-# ============================================================
-# 候補生成関数
-# ============================================================
 def make_initial_candidate(seed):
     """最初の3本線を持つ候補を1つ作る。"""
     rng = random.Random(seed)
@@ -537,18 +419,91 @@ def make_initial_candidate(seed):
     return structure
 
 
+# ============================================================
+# 【大改造】2回目以降：追加・削除・つなぎ直しをランダムにする候補生成
+# ============================================================
 def make_next_candidate(parent_structure, seed):
-    """選択済みの構造を親としてコピーし、そこからランダムに1本線を追加した候補を1つ作る。"""
     rng = random.Random(seed)
-
     structure = relax_structure_copy(parent_structure)
-    parent_count = len(parent_structure["string_data"])
+    
+    # 有効な（削除されていない）親のひも本数
+    parent_count = len([s for s in parent_structure["string_data"] if not s.get("is_deleted", False)])
     structure["parent_string_count"] = parent_count
 
-    added = add_random_strings(structure, ADD_STRINGS_PER_ROUND, rng)
-    simulate_structure(structure)
+    # 現在残っている有効なひも
+    active_strings = [s for s in structure["string_data"] if not s.get("is_deleted", False)]
 
-    structure["actually_added"] = added
+    # どのアクションを実行するかランダムに決定 ('add', 'delete', 'reconnect')
+    if not active_strings:
+        action = 'add'
+    else:
+        action = rng.choice(['add', 'delete', 'reconnect'])
+
+    structure["action_performed"] = action
+    structure["actually_added"] = 0
+
+    if action == 'add':
+        # 🟢 ひもを追加
+        added = add_random_strings(structure, ADD_STRINGS_PER_ROUND, rng)
+        simulate_structure(structure)
+        structure["actually_added"] = added
+        if added > 0:
+            structure["highlighted_string_id"] = structure["string_data"][-1]["id"]
+
+    elif action == 'delete':
+        # 🗑️ ひもを削除（リンクを切り、内部ノードを画面外に固定する）
+        target_s = rng.choice(active_strings)
+        target_s["is_deleted"] = True
+        
+        for i in range(target_s["first_link_idx"], target_s["last_link_idx"] + 1):
+            structure["links"][i] = (0, 0, 0)
+            
+        base = NUM_ANCHORS + target_s["id"] * NUM_INTERNAL_NODES
+        for i in range(base, base + NUM_INTERNAL_NODES):
+            structure["nodes"][i]["fixed"] = True
+            structure["nodes"][i]["x"] = 0.0
+            structure["nodes"][i]["y"] = 9999.0  # カメラ範囲外へ
+            
+        simulate_structure(structure)
+
+    elif action == 'reconnect':
+        # 🔄 ひもをつなぎ直す（片端を選び、別の有効な候補点へ書き換える）
+        target_s = rng.choice(active_strings)
+        end_type = rng.choice(['start', 'end'])
+
+        candidates = get_connection_candidates(structure)
+        current_start = target_s["start_node"]
+        current_end = target_s["end_node"]
+        base = NUM_ANCHORS + target_s["id"] * NUM_INTERNAL_NODES
+        my_mid = base + MID_NODE_OFFSET
+
+        # 自分自身の中央や、現在の両端は避ける
+        available_cands = [c for c in candidates if c != current_start and c != current_end and c != my_mid]
+
+        if available_cands:
+            new_target = rng.choice(available_cands)
+            if end_type == 'start':
+                l_idx = target_s["first_link_idx"]
+                old_l = structure["links"][l_idx]
+                structure["links"][l_idx] = (new_target, old_l[1], old_l[2])
+                target_s["start_node"] = new_target
+            else:
+                l_idx = target_s["last_link_idx"]
+                old_l = structure["links"][l_idx]
+                structure["links"][l_idx] = (old_l[0], new_target, old_l[2])
+                target_s["end_node"] = new_target
+
+            structure["highlighted_string_id"] = target_s["id"]
+            simulate_structure(structure)
+        else:
+            # つなぎ直し候補がなければフォールバック（追加処理）
+            structure["action_performed"] = 'add'
+            added = add_random_strings(structure, ADD_STRINGS_PER_ROUND, rng)
+            simulate_structure(structure)
+            structure["actually_added"] = added
+            if added > 0:
+                structure["highlighted_string_id"] = structure["string_data"][-1]["id"]
+
     return structure
 
 
@@ -562,7 +517,7 @@ def generate_initial_candidates():
 
 
 def generate_next_candidates_from_selected():
-    """選択済み構造を親として、1本追加した4候補を生成する。"""
+    """選択済み構造を親として、ランダムな変化を加えた4候補を生成する。"""
     parent = st.session_state.selected_structure
     if parent is None:
         return
@@ -614,15 +569,15 @@ if st.session_state.app_phase == "choice":
     if st.session_state.choice_step == 0:
         st.write("最初に、ランダムに3本のひもを作った候補を4つ表示しています。")
     else:
-        st.write("選んだ形をもとに、ランダムに1本のひもを追加した候補を4つ表示しています。")
+        st.write("選んだ形をもとに、[追加・削除・つなぎ直し] をランダムに実行した候補を4つ表示しています。")
 
     st.caption(
-        f"選択段階: {st.session_state.choice_step + 1} / {total_choices}　"
-        f"最終的なひもの本数: {FINAL_STRING_COUNT}本"
+        f"選択段階: {st.session_state.choice_step + 1} / {total_choices}"
     )
 
     candidates = st.session_state.candidates
 
+    # 2列×2行で4候補を表示
     for row in range(2):
         cols = st.columns(2)
         for col in range(2):
@@ -638,22 +593,19 @@ if st.session_state.app_phase == "choice":
                     use_container_width=True
                 )
 
-                parent_count = candidate.get("parent_string_count", 0)
-                current_count = len(candidate["string_data"])
+                # 有効なひもの本数を正確にカウント
+                current_count = len([s for s in candidate["string_data"] if not s.get("is_deleted", False)])
 
+                # 【変更】2回目以降は、どのアクションが起きたかをアイコン付きで分かりやすく表示
                 if st.session_state.choice_step == 0:
-                    st.caption(f"案 {idx + 1}：ひも {current_count}本")
+                    st.caption(f"案 {idx + 1}：初期ひも {current_count}本")
                 else:
-                    st.caption(
-                        f"案 {idx + 1}：{parent_count}本 → {current_count}本 "
-                        f"(追加 {candidate.get('actually_added', current_count - parent_count)}本)"
-                    )
+                    action_labels = {'add': '🟢 ひも追加', 'delete': '🗑️ ひも削除', 'reconnect': '🔄 つなぎ直し'}
+                    act = candidate.get("action_performed", "add")
+                    label = action_labels.get(act, "ひも追加")
+                    st.caption(f"案 {idx + 1}：{label} (計 {current_count}本)")
 
-                if st.button(
-                    f"案 {idx + 1} を選択",
-                    key=f"select_{st.session_state.choice_step}_{idx}",
-                    use_container_width=True
-                ):
+                if st.button(f"案 {idx + 1} を選択", key=f"select_{st.session_state.choice_step}_{idx}", use_container_width=True):
                     st.session_state.selected_structure = deep_copy_structure(candidate)
                     st.session_state.generated_image_bytes = None
                     st.session_state.ai_input_image_bytes = None
@@ -681,7 +633,8 @@ elif st.session_state.app_phase == "final":
     st.write("選択が完了しました。まずは、吊り下げた状態の最終形を表示しています。")
     st.image(draw_structure(structure, inverted=False, small=False), use_container_width=True)
 
-    st.caption(f"最終的なひもの本数: {len(structure['string_data'])}本")
+    final_count = len([s for s in structure['string_data'] if not s.get("is_deleted", False)])
+    st.caption(f"最終的なひもの本数: {final_count}本")
 
     col1, col2 = st.columns(2)
     with col1:
@@ -712,7 +665,6 @@ elif st.session_state.app_phase == "inverted":
 
     with col1:
         if st.button("AI画像を生成する", type="primary", use_container_width=True):
-            st.session_state.generated_image_bytes = None
             st.session_state.app_phase = "generate"
             st.rerun()
 
@@ -733,8 +685,6 @@ elif st.session_state.app_phase == "generate":
     if st.session_state.ai_input_image_bytes is None:
         st.session_state.ai_input_image_bytes = make_ai_input_image(structure)
 
-    st.caption(f"現在の生成方式: {generation_mode}")
-
     col1, col2 = st.columns(2)
 
     with col1:
@@ -746,22 +696,11 @@ elif st.session_state.app_phase == "generate":
 
         if st.session_state.generated_image_bytes is None:
             with st.spinner("AIがレンダリングしています..."):
-
-                if generation_mode == "Stability AI Control Structure":
-                    st.session_state.generated_image_bytes = generate_castle_image_stability(
-                        st.session_state.ai_input_image_bytes,
-                        user_prompt,
-                        api_key
-                    )
-
-                elif generation_mode == "Hugging Face Inference Providers":
-                    st.session_state.generated_image_bytes = generate_castle_image_huggingface(
-                        st.session_state.ai_input_image_bytes,
-                        user_prompt,
-                        hf_token,
-                        hf_provider,
-                        hf_model_id
-                    )
+                st.session_state.generated_image_bytes = generate_castle_image(
+                    st.session_state.ai_input_image_bytes,
+                    user_prompt,
+                    api_key
+                )
 
         if st.session_state.generated_image_bytes:
             st.image(st.session_state.generated_image_bytes, use_container_width=True)
