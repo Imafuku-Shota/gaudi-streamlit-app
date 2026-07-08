@@ -33,18 +33,22 @@ DAMPING = 0.75
 MIN_HORIZONTAL_DISTANCE = 3.0
 
 # ============================================================
-# サイドバー：API設定とプロンプト
+# サイドバー：AI生成設定
 # ============================================================
 st.sidebar.title("⚙️ AI生成設定")
-st.sidebar.markdown("APIキーが未入力の場合は、ダミー画像を表示します。")
 
-api_key = st.sidebar.text_input(
-    "APIキー (Stability AI)",
-    type="password",
-    help="Stability AIのAPIキーを入力してください"
-)
+try:
+    api_key = st.secrets["STABILITY_API_KEY"]
+except KeyError:
+    api_key = None
+
+if api_key:
+    st.sidebar.success("APIキーは設定済みです。")
+else:
+    st.sidebar.warning("APIキーが未設定です。Secretsに STABILITY_API_KEY を設定してください。")
 
 st.sidebar.markdown("---")
+
 user_prompt = st.sidebar.text_area(
     "生成プロンプト",
     value="""Transform this structural skeleton into a completed Gaudi-inspired fantasy castle integrated into a dramatic landscape.
@@ -538,13 +542,13 @@ def get_active_bounds(structure):
         base = NUM_ANCHORS + s["id"] * NUM_INTERNAL_NODES
         active_node_indices.update(range(base, base + NUM_INTERNAL_NODES))
 
+    ys = [
+        nodes[i]["y"]
+        for i in active_node_indices
+        if isinstance(i, int) and 0 <= i < len(nodes)
+    ]
+
     deleted_path = structure.get("deleted_string_path", None)
-    if deleted_path:
-        for x, y in deleted_path:
-            active_node_indices.add(None)
-
-    ys = [nodes[i]["y"] for i in active_node_indices if isinstance(i, int) and 0 <= i < len(nodes)]
-
     if deleted_path:
         ys.extend([p[1] for p in deleted_path])
 
@@ -672,7 +676,7 @@ def generate_castle_image(image_bytes, prompt, key):
         img = Image.new("RGB", (1024, 1024), color=(150, 160, 170))
         buf = io.BytesIO()
         img.save(buf, format="PNG")
-        st.warning("⚠️ APIキーが入力されていないため、ダミー画像を表示しています。")
+        st.warning("⚠️ APIキーが設定されていないため、ダミー画像を表示しています。")
         return buf.getvalue()
 
     st.info("🌐 Stability AI Control Structureで生成中...")
