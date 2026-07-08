@@ -6,6 +6,7 @@ import time
 import requests
 import random
 import itertools
+import base64
 from PIL import Image
 
 st.set_page_config(layout="centered")
@@ -33,19 +34,56 @@ DAMPING = 0.75
 MIN_HORIZONTAL_DISTANCE = 3.0
 
 # ============================================================
+# Secrets 読み込み
+# ============================================================
+def read_secret(name):
+    """Streamlit Secretsから値を読む。未設定なら None を返す。"""
+    try:
+        value = st.secrets.get(name, None)
+    except Exception:
+        value = None
+
+    if value == "":
+        return None
+
+    return value
+
+
+stability_api_key = read_secret("STABILITY_API_KEY")
+openai_api_key = read_secret("OPENAI_API_KEY")
+
+# ============================================================
 # サイドバー：AI生成設定
 # ============================================================
 st.sidebar.title("⚙️ AI生成設定")
 
-try:
-    api_key = st.secrets["STABILITY_API_KEY"]
-except KeyError:
-    api_key = None
+api_provider = st.sidebar.radio(
+    "画像生成API",
+    ["Stability AI", "OpenAI"],
+    index=0,
+    help="画像生成に使うAPIを選択します。"
+)
 
-if api_key:
-    st.sidebar.success("APIキーは設定済みです。")
+st.sidebar.markdown("#### APIキー状態")
+
+if stability_api_key:
+    st.sidebar.success("Stability AI：設定済み")
 else:
-    st.sidebar.warning("APIキーが未設定です。Secretsに STABILITY_API_KEY を設定してください。")
+    st.sidebar.warning("Stability AI：未設定")
+
+if openai_api_key:
+    st.sidebar.success("OpenAI：設定済み")
+else:
+    st.sidebar.warning("OpenAI：未設定")
+
+if api_provider == "Stability AI":
+    selected_api_key = stability_api_key
+    if not selected_api_key:
+        st.sidebar.warning("現在 Stability AI が選択されていますが、STABILITY_API_KEY が未設定です。")
+else:
+    selected_api_key = openai_api_key
+    if not selected_api_key:
+        st.sidebar.warning("現在 OpenAI が選択されていますが、OPENAI_API_KEY が未設定です。")
 
 st.sidebar.markdown("---")
 
@@ -669,17 +707,26 @@ def make_ai_input_image(structure):
     return out_buf.getvalue()
 
 
-def generate_castle_image(image_bytes, prompt, key):
+# ============================================================
+# 画像生成API
+# ============================================================
+def make_dummy_image():
+    """APIキー未設定時に表示するダミー画像を返す。"""
+    time.sleep(1.0)
+    img = Image.new("RGB", (1024, 1024), color=(150, 160, 170))
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def generate_stability_image(image_bytes, prompt, key):
     """Stability AI Control Structureで、骨組みを構造ガイドとして画像生成する。"""
     if not key:
-        time.sleep(1.0)
-        img = Image.new("RGB", (1024, 1024), color=(150, 160, 170))
-        buf = io.BytesIO()
-        img.save(buf, format="PNG")
-        st.warning("⚠️ APIキーが設定されていないため、ダミー画像を表示しています。")
-        return buf.getvalue()
+        st.warning("⚠️ STABILITY_API_KEY が設定されていないため、ダミー画像を表示しています。")
+        return make_dummy_image()
 
     st.info("🌐 Stability AI Control Structureで生成中...")
+
     url = "https://api.stability.ai/v2beta/stable-image/control/structure"
 
     try:
@@ -705,15 +752,85 @@ def generate_castle_image(image_bytes, prompt, key):
         )
 
         if response.status_code != 200:
-            st.error(f"APIエラーが発生しました: {response.status_code}")
+            st.error(f"Stability AI APIエラーが発生しました: {response.status_code}")
             st.code(response.text)
             return None
 
         return response.content
 
     except Exception as e:
-        st.error(f"通信中にエラーが発生しました: {e}")
+        st.error(f"Stability AI 通信中にエラーが発生しました: {e}")
         return None
+
+
+def generate_openai_image(image_bytes, prompt, key):
+    """OpenAI Images Edit APIで、骨組み画像を入力として画像生成する。"""
+    if not key:
+        st.warning("⚠️ OPENAI_API_KEY が設定されていないため、ダミー画像を表示しています。")
+        return make_dummy_image()
+
+    st.info("🌐 OpenAI Images APIで生成中...")
+
+    url = "https://api.openai.com/v1/images/edits"
+
+    try:
+        response = requests.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {key}"
+            },
+            files=[
+                (
+                    "image[]",
+                    ("skeleton.png", image_bytes, "image/png")
+                )
+            ],
+            data={
+                "model": "gpt-image-1.5",
+                "prompt": prompt,
+                "size": "1024x1024",
+                "quality": "medium",
+                "output_format": "png",
+                "n": "1"
+            },
+            timeout=180
+        )
+
+        if response.status_code != 200:
+            st.error(f"OpenAI APIエラーが発生しました: {response.status_code}")
+            st.code(response.text)
+            return None
+
+        data = response.json()
+
+        if "data" not in data or len(data["data"]) == 0:
+            st.error("OpenAI APIの返答に画像データが含まれていません。")
+            st.code(data)
+            return None
+
+        b64_image = data["data"][0].get("b64_json")
+        if not b64_image:
+            st.error("OpenAI APIの返答に b64_json が含まれていません。")
+            st.code(data)
+            return None
+
+        return base64.b64decode(b64_image)
+
+    except Exception as e:
+        st.error(f"OpenAI 通信中にエラーが発生しました: {e}")
+        return None
+
+
+def generate_castle_image(image_bytes, prompt, provider, key):
+    """選択されたAPIで画像生成する。"""
+    if provider == "Stability AI":
+        return generate_stability_image(image_bytes, prompt, key)
+
+    if provider == "OpenAI":
+        return generate_openai_image(image_bytes, prompt, key)
+
+    st.error("画像生成APIの選択が不正です。")
+    return None
 
 
 def make_initial_candidate(seed):
@@ -1143,12 +1260,15 @@ elif st.session_state.app_phase == "generate":
     with col2:
         st.subheader("🎨 AI生成結果")
 
+        st.caption(f"使用API：{api_provider}")
+
         if st.session_state.generated_image_bytes is None:
             with st.spinner("AIがレンダリングしています..."):
                 st.session_state.generated_image_bytes = generate_castle_image(
                     st.session_state.ai_input_image_bytes,
                     user_prompt,
-                    api_key
+                    api_provider,
+                    selected_api_key
                 )
 
         if st.session_state.generated_image_bytes:
@@ -1159,7 +1279,7 @@ elif st.session_state.app_phase == "generate":
     col1, col2 = st.columns(2)
 
     with col1:
-        if st.button("別プロンプトで再生成", use_container_width=True):
+        if st.button("別プロンプト・別APIで再生成", use_container_width=True):
             st.session_state.generated_image_bytes = None
             st.rerun()
 
