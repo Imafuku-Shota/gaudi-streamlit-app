@@ -23,10 +23,9 @@ NUM_INTERNAL_NODES = NUM_NEW_NODES - 2
 MID_NODE_OFFSET = NUM_INTERNAL_NODES // 2
 
 NUM_CHOICES = 4
-INITIAL_STRINGS = 3
+INITIAL_STRINGS = 5
 ADD_STRINGS_PER_ROUND = 1
 ADDITION_ROUNDS = 4
-CHANGES_PER_CANDIDATE = 2
 
 GRAVITY = 0.08
 STIFFNESS = 0.95
@@ -154,11 +153,7 @@ def deep_copy_structure(structure):
 def format_node_label(idx):
     """ノード番号を画面表示用の名前に変換する。"""
     if idx < NUM_ANCHORS:
-        positions = [
-            "一番左", "左から2番目", "左から3番目", "中央の左",
-            "中央の右", "右から3番目", "右から2番目", "一番右"
-        ]
-        return f"天井 {idx + 1} ({positions[idx]})"
+        return f"天井 {idx + 1}"
 
     s_id = (idx - NUM_ANCHORS) // NUM_INTERNAL_NODES
     return f"ひも {s_id + 1} の中央"
@@ -838,7 +833,7 @@ def generate_castle_image(image_bytes, prompt, provider, key):
 
 
 def make_initial_candidate(seed):
-    """最初の3本線を持つ候補を1つ作る。"""
+    """最初の5本線を持つ候補を1つ作る。"""
     rng = random.Random(seed)
     structure = create_empty_structure()
     add_random_strings(structure, INITIAL_STRINGS, rng)
@@ -972,19 +967,18 @@ def apply_change(parent_structure, change):
     return relax_structure_copy(parent_structure)
 
 
-def generate_unique_next_candidates(
-    parent_structure,
-    num_choices,
-    num_changes=CHANGES_PER_CANDIDATE
-):
+def generate_unique_next_candidates(parent_structure, num_choices):
     """
-    選択済み構造を親として、重複しない変化を複数回加えた候補を作る。
+    選択済み構造を親として、
+    1. 既存のひもを1本つなぎ直す
+    2. 新しいひもを1本追加する
+    の順で候補を生成する。
     最終的な接続関係が同じ候補は出さない。
     """
     rng = random.Random(random.randint(0, 10**9))
+
     candidates = []
     used_structure_signatures = set()
-
     parent_signature = structure_signature(parent_structure)
 
     attempts = 0
@@ -993,53 +987,45 @@ def generate_unique_next_candidates(
     while len(candidates) < num_choices and attempts < max_attempts:
         attempts += 1
         candidate = parent_structure
-        actions_taken = []
 
-        # 2回の変化のうち、追加可能なら最低1回は追加を含める
-        plan = ["add"] + ["any"] * (num_changes - 1)
-        rng.shuffle(plan)
+        # 1回目：既存のひもを1本つなぎ直す
+        possible_changes = get_possible_changes_by_action(candidate)
+        reconnect_changes = possible_changes.get("reconnect", [])
 
-        for step_type in plan:
-            possible_by_action = get_possible_changes_by_action(candidate)
-
-            if step_type == "add" and possible_by_action.get("add"):
-                available_actions = ["add"]
-            else:
-                available_actions = [
-                    action
-                    for action, changes in possible_by_action.items()
-                    if changes
-                ]
-
-            if not available_actions:
-                break
-
-            action = rng.choice(available_actions)
-            change = rng.choice(possible_by_action[action])
-            candidate = apply_change(candidate, change)
-            actions_taken.append(action)
-
-        s_sig = structure_signature(candidate)
-
-        # 2回とも実行できなかった候補、親と同じ候補、重複候補は除外
-        if (
-            len(actions_taken) != num_changes
-            or s_sig == parent_signature
-            or s_sig in used_structure_signatures
-        ):
+        if not reconnect_changes:
             continue
 
-        candidate["action_performed"] = "multiple"
-        candidate["actions_taken"] = actions_taken
+        reconnect_change = rng.choice(reconnect_changes)
+        candidate = apply_change(candidate, reconnect_change)
 
-        used_structure_signatures.add(s_sig)
+        # 2回目：新しいひもを1本追加する
+        possible_changes = get_possible_changes_by_action(candidate)
+        add_changes = possible_changes.get("add", [])
+
+        if not add_changes:
+            continue
+
+        add_change = rng.choice(add_changes)
+        candidate = apply_change(candidate, add_change)
+
+        candidate_signature = structure_signature(candidate)
+
+        if candidate_signature == parent_signature:
+            continue
+
+        if candidate_signature in used_structure_signatures:
+            continue
+
+        candidate["action_performed"] = "reconnect_then_add"
+        candidate["actions_taken"] = ["reconnect", "add"]
+
+        used_structure_signatures.add(candidate_signature)
         candidates.append(candidate)
 
     return candidates
 
-
 def generate_initial_candidates():
-    """最初の3本線の4候補を生成する。"""
+    """最初の5本線の4候補を生成する。"""
     candidates = []
     used_signatures = set()
 
@@ -1132,9 +1118,9 @@ if st.session_state.app_phase == "choice":
         st.markdown("---")
 
     if st.session_state.choice_step == 0:
-        st.write("最初に、ランダムに3本のひもを作った候補を4つ表示しています。")
+        st.write("最初に、ランダムに5本のひもを作った候補を4つ表示しています。")
     else:
-        st.write("選んだ形をもとに、[追加・削除・つなぎ直し]を2回実行した候補を表示しています。")
+        st.write("選んだ形をもとに、既存のひもを1本つなぎ直した後、新しいひもを1本追加した候補を表示しています。")
 
     st.caption(
         f"選択段階: {st.session_state.choice_step + 1} / {total_choices}"
@@ -1177,17 +1163,10 @@ if st.session_state.app_phase == "choice":
                 else:
                     act = candidate.get("action_performed", "add")
 
-                    if act == "multiple":
-                        icon_map = {
-                            "add": "🟢",
-                            "delete": "🗑️",
-                            "reconnect": "🔄"
-                        }
-                        actions = candidate.get("actions_taken", [])
-                        icons = "".join(icon_map.get(a, "") for a in actions)
+                    if act == "reconnect_then_add":
                         st.caption(
-                            f"案 {idx + 1}：{len(actions)}回変化 "
-                            f"{icons}（計 {current_count}本）"
+                            f"案 {idx + 1}：🔄 つなぎ直し → "
+                            f"🟢 ひも追加（計 {current_count}本）"
                         )
                     else:
                         action_labels = {
