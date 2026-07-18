@@ -2,6 +2,7 @@ import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
 import io
+import math
 import time
 import requests
 import random
@@ -521,35 +522,50 @@ def structure_signature(structure):
 
 
 def simulate_structure(structure, steps=350, constraint_iterations=6):
-    """ひもの物理シミュレーションを行い、垂れ下がった形に落ち着かせる。"""
+    """
+    ひもの物理シミュレーションを行い、垂れ下がった形に落ち着かせる。
+    計算条件は変えず、ループ内の無駄な判定だけを減らす。
+    """
     nodes = structure["nodes"]
-    links = structure["links"]
+
+    # 削除済みリンクを最初に除外する
+    active_links = [
+        (idx1, idx2, target_dist)
+        for idx1, idx2, target_dist in structure["links"]
+        if not (idx1 == 0 and idx2 == 0)
+    ]
+
+    # 動くノードだけを最初に取得する
+    movable_nodes = [
+        node
+        for node in nodes
+        if not node.get("fixed", False)
+    ]
 
     for _ in range(steps):
-        for n in nodes:
-            if not n.get("fixed", False):
-                vx = (n["x"] - n["px"]) * DAMPING
-                vy = (n["y"] - n["py"]) * DAMPING
+        for node in movable_nodes:
+            vx = (node["x"] - node["px"]) * DAMPING
+            vy = (node["y"] - node["py"]) * DAMPING
 
-                n["px"], n["py"] = n["x"], n["y"]
-                n["x"] += vx
-                n["y"] += vy - GRAVITY
+            node["px"] = node["x"]
+            node["py"] = node["y"]
+
+            node["x"] += vx
+            node["y"] += vy - GRAVITY
 
         for _ in range(constraint_iterations):
-            for idx1, idx2, target_dist in links:
-                if idx1 == 0 and idx2 == 0:
-                    continue
-
-                n1, n2 = nodes[idx1], nodes[idx2]
+            for idx1, idx2, target_dist in active_links:
+                n1 = nodes[idx1]
+                n2 = nodes[idx2]
 
                 dx = n2["x"] - n1["x"]
                 dy = n2["y"] - n1["y"]
-                d = np.sqrt(dx**2 + dy**2)
+                distance = math.hypot(dx, dy)
 
-                if d == 0:
+                if distance == 0:
                     continue
 
-                diff = (target_dist - d) / d * 0.5
+                diff = (target_dist - distance) / distance * 0.5
 
                 if not n1.get("fixed", False):
                     n1["x"] -= dx * diff * STIFFNESS
@@ -973,7 +989,6 @@ def generate_unique_next_candidates(parent_structure, num_choices):
     1. 既存のひもを1本つなぎ直す
     2. 新しいひもを1本追加する
     の順で候補を生成する。
-    最終的な接続関係が同じ候補は出さない。
     """
     rng = random.Random(random.randint(0, 10**9))
 
@@ -981,33 +996,30 @@ def generate_unique_next_candidates(parent_structure, num_choices):
     used_structure_signatures = set()
     parent_signature = structure_signature(parent_structure)
 
+    # 親構造に対するつなぎ直し候補は最初に1回だけ計算する
+    reconnect_changes = get_valid_reconnect_changes(parent_structure)
+
+    if not reconnect_changes:
+        return []
+
     attempts = 0
     max_attempts = 1000
 
     while len(candidates) < num_choices and attempts < max_attempts:
         attempts += 1
-        candidate = parent_structure
-
-        # 1回目：既存のひもを1本つなぎ直す
-        possible_changes = get_possible_changes_by_action(candidate)
-        reconnect_changes = possible_changes.get("reconnect", [])
-
-        if not reconnect_changes:
-            continue
 
         reconnect_change = rng.choice(reconnect_changes)
-        candidate = apply_change(candidate, reconnect_change)
+        candidate = apply_change(parent_structure, reconnect_change)
 
-        # 2回目：新しいひもを1本追加する
-        possible_changes = get_possible_changes_by_action(candidate)
-        add_changes = possible_changes.get("add", [])
+        add_changes = get_valid_add_pairs(candidate)
 
         if not add_changes:
             continue
 
-        add_change = rng.choice(add_changes)
-        candidate = apply_change(candidate, add_change)
+        idx1, idx2 = rng.choice(add_changes)
+        add_change = ("add", idx1, idx2)
 
+        candidate = apply_change(candidate, add_change)
         candidate_signature = structure_signature(candidate)
 
         if candidate_signature == parent_signature:
@@ -1023,6 +1035,7 @@ def generate_unique_next_candidates(parent_structure, num_choices):
         candidates.append(candidate)
 
     return candidates
+
 
 def generate_initial_candidates():
     """最初の5本線の4候補を生成する。"""
