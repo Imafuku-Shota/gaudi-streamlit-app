@@ -14,7 +14,7 @@ st.set_page_config(layout="centered")
 # ============================================================
 # 設定値
 # ============================================================
-NUM_ANCHORS = 8
+NUM_ANCHORS = 12
 anchors_x = np.linspace(-17.5, 17.5, NUM_ANCHORS)
 anchors = [{"x": float(x), "y": 0.0} for x in anchors_x]
 
