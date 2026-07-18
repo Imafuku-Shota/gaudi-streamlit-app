@@ -1510,10 +1510,21 @@ elif st.session_state.app_phase == "final":
 
     structure = st.session_state.selected_structure
     st.write("選択が完了しました。まずは、吊り下げた状態の最終形を表示しています。")
-    st.image(draw_structure(structure, inverted=False, small=False), use_container_width=True)
+    # 最終形画像を画面中央40％の幅に抑える
+    final_image_cols = st.columns([0.30, 0.40, 0.30])
 
-    final_count = count_active_strings(structure)
-    st.caption(f"最終的なひもの本数: {final_count}本")
+    with final_image_cols[1]:
+        st.image(
+            draw_structure(
+                structure,
+                inverted=False,
+                small=False
+            ),
+            use_container_width=True
+        )
+
+        final_count = count_active_strings(structure)
+        st.caption(f"最終的なひもの本数: {final_count}本")
 
     col1, col2 = st.columns(2)
     with col1:
@@ -1538,7 +1549,14 @@ elif st.session_state.app_phase == "inverted":
     ai_input_image_bytes = make_ai_input_image(structure)
     st.session_state.ai_input_image_bytes = ai_input_image_bytes
 
-    st.image(ai_input_image_bytes, use_container_width=True)
+    # 上下反転画像も画面中央40％の幅に抑える
+    inverted_image_cols = st.columns([0.30, 0.40, 0.30])
+
+    with inverted_image_cols[1]:
+        st.image(
+            ai_input_image_bytes,
+            use_container_width=True
+        )
 
     col1, col2 = st.columns(2)
 
