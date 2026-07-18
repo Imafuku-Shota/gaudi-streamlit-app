@@ -58,6 +58,15 @@ DAMPING = 0.75
 # 0.0で完全遮断、1.0で通常の物理挙動。0.1なら横方向の力を10％だけ伝える。
 HORIZONTAL_FORCE_SCALE = 0.1
 
+# ひもの基準距離に「横距離＋縦距離」を反映する割合。
+# 0.0で従来の直線距離、1.0で横距離＋縦距離をそのまま使用する。
+# 大きくすると斜め方向のひもに長さの余裕が増えるが、垂れやすくなる。
+XY_DISTANCE_BLEND = 0.30
+
+# 基準距離を直線距離の何倍まで許可するか。
+# 横距離＋縦距離を混ぜても、長くなりすぎないようにする上限。
+MAX_BASE_DISTANCE_RATIO = 1.20
+
 # ひもの長さ倍率の下限。大きくすると、最も短いひもでもたるみやすくなる。
 STRING_LENGTH_SCALE_MIN = 1.01
 
@@ -416,10 +425,28 @@ def add_string_to_structure(structure, idx1, idx2, rng=None):
 
     p1 = nodes[physics_idx1]
     p2 = nodes[physics_idx2]
-    dist = math.hypot(p2["x"] - p1["x"], p2["y"] - p1["y"])
 
-    if dist == 0:
+    dx = abs(p2["x"] - p1["x"])
+    dy = abs(p2["y"] - p1["y"])
+
+    # 従来の2点間の直線距離
+    straight_dist = math.hypot(dx, dy)
+
+    if straight_dist == 0:
         return False
+
+    # 横距離と縦距離を足した距離
+    xy_dist = dx + dy
+
+    # 直線距離へ横・縦距離を一部反映する
+    blended_dist = (
+        straight_dist * (1.0 - XY_DISTANCE_BLEND)
+        + xy_dist * XY_DISTANCE_BLEND
+    )
+
+    # 長くなりすぎて深く垂れないよう、直線距離に対する上限を設ける
+    max_base_dist = straight_dist * MAX_BASE_DISTANCE_RATIO
+    dist = min(blended_dist, max_base_dist)
 
     # rngが渡されていない場合も動作できるようにする
     if rng is None:
