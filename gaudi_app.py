@@ -157,7 +157,7 @@ def format_node_label(idx):
         return f"天井 {idx + 1}"
 
     s_id = (idx - NUM_ANCHORS) // NUM_INTERNAL_NODES
-    return f"ひも {s_id + 1} の中央"
+    return f"ひも {s_id + 1} の一番下"
 
 
 def get_active_strings(structure):
@@ -189,10 +189,12 @@ def get_string_logical_nodes(s):
     )
 
 
-def create_follow_anchor(structure, source_node_idx):
+def create_vertical_follow_anchor(structure, source_node_idx):
     """
-    指定したノードの位置だけを追従する仮想固定点を作る。
-    新しいひもから追従元へ力は返さない。
+    指定したノードのX座標を追従し、Y方向の力だけを
+    接続元へ伝える仮想接続点を作る。
+
+    新しいひもからの横方向の力は接続元へ伝えない。
     """
     source = structure["nodes"][source_node_idx]
 
@@ -202,7 +204,7 @@ def create_follow_anchor(structure, source_node_idx):
         "px": float(source["x"]),
         "py": float(source["y"]),
         "fixed": True,
-        "follow_node": source_node_idx
+        "vertical_follow_node": source_node_idx
     })
 
     return len(structure["nodes"]) - 1
@@ -211,18 +213,32 @@ def create_follow_anchor(structure, source_node_idx):
 def prepare_attachment_node(structure, node_idx):
     """
     天井固定点はそのまま使う。
-    既存のひもの中央点へ接続する場合は仮想固定点を作る。
+    既存のひもの一番下の点へ接続する場合は、
+    横方向の力を遮断し、縦方向の力だけを伝える仮想点を作る。
     """
     if node_idx < NUM_ANCHORS:
         return node_idx
 
-    return create_follow_anchor(structure, node_idx)
+    return create_vertical_follow_anchor(structure, node_idx)
 
 
-def get_string_middle_node(s):
-    """指定したひもの中央ノード番号を返す。"""
+def get_string_bottom_node(structure, s):
+    """指定したひもの内部ノードのうち、一番下にあるノード番号を返す。"""
     base = get_string_internal_start(s)
-    return base + MID_NODE_OFFSET
+    valid_indices = [
+        idx
+        for idx in range(base, base + NUM_INTERNAL_NODES)
+        if 0 <= idx < len(structure["nodes"])
+    ]
+
+    if not valid_indices:
+        return base + MID_NODE_OFFSET
+
+    return min(
+        valid_indices,
+        key=lambda idx: structure["nodes"][idx]["y"]
+    )
+
 
 def get_string_node_indices(s):
     """指定したひもを構成するノード番号の一覧を返す。"""
@@ -329,8 +345,8 @@ def add_string_to_structure(structure, idx1, idx2):
     """
     指定した2点の間に、新しいひもを1本追加する。
 
-    既存のひもの中央へ接続するときは仮想固定点を使用し、
-    新しいひもの力が元のひもへ逆流しないようにする。
+    既存のひもの一番下へ接続するときは仮想接続点を使用し、
+    横方向の力を遮断して、縦方向の力だけを元のひもへ伝える。
     """
     nodes = structure["nodes"]
     links = structure["links"]
@@ -401,17 +417,17 @@ def add_string_to_structure(structure, idx1, idx2):
     return True
 
 def get_connection_candidates(structure):
-    """次にひもを接続できる候補点を返す。削除されたひもは除外する。"""
+    """天井点と、各有効ひもの一番下のノードを接続候補として返す。"""
     candidates = list(range(NUM_ANCHORS))
 
     for s in structure["string_data"]:
         if s.get("is_deleted", False):
             continue
 
-        middle_node = get_string_middle_node(s)
+        bottom_node = get_string_bottom_node(structure, s)
 
-        if 0 <= middle_node < len(structure["nodes"]):
-            candidates.append(middle_node)
+        if 0 <= bottom_node < len(structure["nodes"]):
+            candidates.append(bottom_node)
 
     return candidates
 
@@ -499,7 +515,7 @@ def get_valid_reconnect_changes(structure):
     for string_info in active_strings:
         current_start, current_end = get_string_logical_nodes(string_info)
         current_pair = tuple(sorted((current_start, current_end)))
-        my_mid = get_string_middle_node(string_info)
+        my_bottom = get_string_bottom_node(structure, string_info)
 
         existing_pairs_without_self = set(existing_pairs)
         existing_pairs_without_self.discard(current_pair)
@@ -508,7 +524,7 @@ def get_valid_reconnect_changes(structure):
             fixed_other = current_end if end_type == "start" else current_start
 
             for new_target in candidates:
-                if new_target in {current_start, current_end, my_mid, fixed_other}:
+                if new_target in {current_start, current_end, my_bottom, fixed_other}:
                     continue
 
                 new_pair = tuple(sorted((new_target, fixed_other)))
@@ -525,6 +541,7 @@ def get_valid_reconnect_changes(structure):
                 changes.append(("reconnect", string_info["id"], end_type, new_target))
 
     return sorted(set(changes))
+
 
 def get_possible_changes_by_action(structure):
     """現在の構造から、重複しない実行可能な変化を行動別に返す。"""
@@ -570,8 +587,9 @@ def simulate_structure(structure, steps=350, constraint_iterations=6):
     """
     ひもの物理シミュレーションを行い、垂れ下がった形に落ち着かせる。
 
-    follow_nodeを持つ仮想固定点は追従元の位置へ移動するが、
-    新しいひもから追従元へ力は返さない。
+    vertical_follow_nodeを持つ仮想接続点は、接続元のX座標だけを追従する。
+    新しいひもから受ける横方向の補正は捨て、縦方向の補正だけを
+    接続元ノードへ伝える。
     """
     nodes = structure["nodes"]
 
@@ -587,23 +605,42 @@ def simulate_structure(structure, steps=350, constraint_iterations=6):
         if not node.get("fixed", False)
     ]
 
-    follow_nodes = [
+    vertical_follow_nodes = [
         node
         for node in nodes
-        if "follow_node" in node
+        if "vertical_follow_node" in node
     ]
 
-    def update_follow_nodes():
-        for node in follow_nodes:
-            source_idx = node["follow_node"]
-            if not (0 <= source_idx < len(nodes)):
-                continue
+    def sync_vertical_follow_node(node):
+        source_idx = node["vertical_follow_node"]
+        if not (0 <= source_idx < len(nodes)):
+            return None
 
-            source = nodes[source_idx]
+        source = nodes[source_idx]
+        node["x"] = source["x"]
+        node["y"] = source["y"]
+        node["px"] = source["x"]
+        node["py"] = source["y"]
+        return source
+
+    def apply_node_correction(node, correction_x, correction_y):
+        """通常点にはXY補正、仮想接続点にはY補正だけを適用する。"""
+        if "vertical_follow_node" in node:
+            source = sync_vertical_follow_node(node)
+            if source is None:
+                return
+
+            # 横方向の補正は破棄し、縦方向だけを接続元へ伝える
+            source["y"] += correction_y
             node["x"] = source["x"]
             node["y"] = source["y"]
             node["px"] = source["x"]
             node["py"] = source["y"]
+            return
+
+        if not node.get("fixed", False):
+            node["x"] += correction_x
+            node["y"] += correction_y
 
     for _ in range(steps):
         for node in movable_nodes:
@@ -617,11 +654,17 @@ def simulate_structure(structure, steps=350, constraint_iterations=6):
             node["y"] += vy - GRAVITY
 
         for _ in range(constraint_iterations):
-            update_follow_nodes()
+            for node in vertical_follow_nodes:
+                sync_vertical_follow_node(node)
 
             for idx1, idx2, target_dist in active_links:
                 n1 = nodes[idx1]
                 n2 = nodes[idx2]
+
+                if "vertical_follow_node" in n1:
+                    sync_vertical_follow_node(n1)
+                if "vertical_follow_node" in n2:
+                    sync_vertical_follow_node(n2)
 
                 dx = n2["x"] - n1["x"]
                 dy = n2["y"] - n1["y"]
@@ -631,16 +674,12 @@ def simulate_structure(structure, steps=350, constraint_iterations=6):
                     continue
 
                 diff = (target_dist - distance) / distance * 0.5
+                correction_x = dx * diff * STIFFNESS
+                correction_y = dy * diff * STIFFNESS
 
-                if not n1.get("fixed", False):
-                    n1["x"] -= dx * diff * STIFFNESS
-                    n1["y"] -= dy * diff * STIFFNESS
+                apply_node_correction(n1, -correction_x, -correction_y)
+                apply_node_correction(n2, correction_x, correction_y)
 
-                if not n2.get("fixed", False):
-                    n2["x"] += dx * diff * STIFFNESS
-                    n2["y"] += dy * diff * STIFFNESS
-
-        update_follow_nodes()
 
 def relax_structure_copy(structure):
     """選択済み構造を直接変更しないためにコピーする。"""
