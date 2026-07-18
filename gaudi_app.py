@@ -24,7 +24,7 @@ NUM_INTERNAL_NODES = NUM_NEW_NODES - 2
 MID_NODE_OFFSET = NUM_INTERNAL_NODES // 2
 
 NUM_CHOICES = 4
-INITIAL_STRINGS = 3
+INITIAL_STRINGS = 5
 ADD_STRINGS_PER_ROUND = 1
 ADDITION_ROUNDS = 4
 
@@ -1091,6 +1091,11 @@ def apply_reconnect_change(parent_structure, change):
         structure["actually_added"] = 0
         structure["change_signature"] = change_signature(change)
         return structure
+
+    # つなぎ直す前の形を保存する。
+    # つなぎ直し後に消えた旧位置を、青の点線で表示するために使う。
+    old_reconnect_path = capture_string_path(structure, target_s)
+    structure.setdefault("deleted_string_paths", []).append(old_reconnect_path)
 
     physics_target = prepare_attachment_node(structure, new_target)
 
