@@ -173,21 +173,65 @@ def count_active_strings(structure):
     return len(get_active_strings(structure))
 
 
+def get_string_internal_start(s):
+    """指定したひもの内部ノード列の開始番号を返す。"""
+    return s.get(
+        "internal_node_start",
+        NUM_ANCHORS + s["id"] * NUM_INTERNAL_NODES
+    )
+
+
+def get_string_logical_nodes(s):
+    """仮想固定点ではなく、本来の接続先ノード番号を返す。"""
+    return (
+        s.get("logical_start_node", s["start_node"]),
+        s.get("logical_end_node", s["end_node"])
+    )
+
+
+def create_follow_anchor(structure, source_node_idx):
+    """
+    指定したノードの位置だけを追従する仮想固定点を作る。
+    新しいひもから追従元へ力は返さない。
+    """
+    source = structure["nodes"][source_node_idx]
+
+    structure["nodes"].append({
+        "x": float(source["x"]),
+        "y": float(source["y"]),
+        "px": float(source["x"]),
+        "py": float(source["y"]),
+        "fixed": True,
+        "follow_node": source_node_idx
+    })
+
+    return len(structure["nodes"]) - 1
+
+
+def prepare_attachment_node(structure, node_idx):
+    """
+    天井固定点はそのまま使う。
+    既存のひもの中央点へ接続する場合は仮想固定点を作る。
+    """
+    if node_idx < NUM_ANCHORS:
+        return node_idx
+
+    return create_follow_anchor(structure, node_idx)
+
+
 def get_string_middle_node(s):
     """指定したひもの中央ノード番号を返す。"""
-    base = NUM_ANCHORS + s["id"] * NUM_INTERNAL_NODES
+    base = get_string_internal_start(s)
     return base + MID_NODE_OFFSET
-
 
 def get_string_node_indices(s):
     """指定したひもを構成するノード番号の一覧を返す。"""
-    base = NUM_ANCHORS + s["id"] * NUM_INTERNAL_NODES
+    base = get_string_internal_start(s)
     return (
         [s["start_node"]]
         + list(range(base, base + NUM_INTERNAL_NODES))
         + [s["end_node"]]
     )
-
 
 def capture_string_path(structure, s):
     """削除前のひもの形を保存するため、座標列を取得する。"""
@@ -224,8 +268,7 @@ def get_string_bottom_y(structure, s):
 
 def string_has_child(target_s, active_strings):
     """
-    target_s の中央点に、他の有効なひもが接続しているか確認する。
-    接続している場合、そのひもを削除すると他のひもの接続先が壊れるため、削除対象にしない。
+    target_s の中央点に、他の有効なひもが論理的に接続しているか確認する。
     """
     middle_node = get_string_middle_node(target_s)
 
@@ -233,11 +276,11 @@ def string_has_child(target_s, active_strings):
         if other["id"] == target_s["id"]:
             continue
 
-        if other["start_node"] == middle_node or other["end_node"] == middle_node:
+        other_start, other_end = get_string_logical_nodes(other)
+        if other_start == middle_node or other_end == middle_node:
             return True
 
     return False
-
 
 def get_leaf_strings(structure):
     """
@@ -283,13 +326,25 @@ def get_string_by_id(structure, string_id):
 
 
 def add_string_to_structure(structure, idx1, idx2):
-    """指定した2点の間に、新しいひもを1本追加する。"""
+    """
+    指定した2点の間に、新しいひもを1本追加する。
+
+    既存のひもの中央へ接続するときは仮想固定点を使用し、
+    新しいひもの力が元のひもへ逆流しないようにする。
+    """
     nodes = structure["nodes"]
     links = structure["links"]
     string_data = structure["string_data"]
 
-    p1, p2 = nodes[idx1], nodes[idx2]
-    dist = np.sqrt((p2["x"] - p1["x"])**2 + (p2["y"] - p1["y"])**2)
+    logical_idx1 = idx1
+    logical_idx2 = idx2
+
+    physics_idx1 = prepare_attachment_node(structure, logical_idx1)
+    physics_idx2 = prepare_attachment_node(structure, logical_idx2)
+
+    p1 = nodes[physics_idx1]
+    p2 = nodes[physics_idx2]
+    dist = math.hypot(p2["x"] - p1["x"], p2["y"] - p1["y"])
 
     if dist == 0:
         return False
@@ -307,7 +362,7 @@ def add_string_to_structure(structure, idx1, idx2):
         sag = sag_depth * (4.0 * t * (1.0 - t))
         new_y[i] = linear_y - sag
 
-    start_idx = len(nodes)
+    internal_node_start = len(nodes)
     first_link_idx = len(links)
 
     for i in range(1, NUM_NEW_NODES - 1):
@@ -319,29 +374,31 @@ def add_string_to_structure(structure, idx1, idx2):
             "fixed": False
         })
 
-    prev_idx = idx1
-    current_new_idx = start_idx
+    prev_idx = physics_idx1
+    current_new_idx = internal_node_start
 
     for _ in range(1, NUM_NEW_NODES - 1):
         links.append((prev_idx, current_new_idx, seg_len))
         prev_idx = current_new_idx
         current_new_idx += 1
 
-    links.append((prev_idx, idx2, seg_len))
+    links.append((prev_idx, physics_idx2, seg_len))
 
     string_data.append({
         "id": len(string_data),
-        "start_node": idx1,
-        "end_node": idx2,
+        "start_node": physics_idx1,
+        "end_node": physics_idx2,
+        "logical_start_node": logical_idx1,
+        "logical_end_node": logical_idx2,
+        "internal_node_start": internal_node_start,
         "first_link_idx": first_link_idx,
         "last_link_idx": len(links) - 1,
         "is_deleted": False
     })
 
-    structure.setdefault("added_pairs", []).append((idx1, idx2))
+    structure.setdefault("added_pairs", []).append((logical_idx1, logical_idx2))
 
     return True
-
 
 def get_connection_candidates(structure):
     """次にひもを接続できる候補点を返す。削除されたひもは除外する。"""
@@ -360,18 +417,17 @@ def get_connection_candidates(structure):
 
 
 def get_existing_pairs(structure):
-    """すでに存在するひもの始点・終点ペアを取得する。削除されたものは除外する。"""
+    """現在存在するひもの論理的な接続ペアを取得する。"""
     existing_pairs = set()
 
-    for s in structure["string_data"]:
-        if s.get("is_deleted", False):
+    for string_info in structure["string_data"]:
+        if string_info.get("is_deleted", False):
             continue
 
-        pair = tuple(sorted((s["start_node"], s["end_node"])))
-        existing_pairs.add(pair)
+        start_node, end_node = get_string_logical_nodes(string_info)
+        existing_pairs.add(tuple(sorted((start_node, end_node))))
 
     return existing_pairs
-
 
 def get_valid_add_pairs(structure):
     """追加可能な接続ペアをすべて返す。"""
@@ -438,14 +494,12 @@ def get_valid_reconnect_changes(structure):
 
     candidates = get_connection_candidates(structure)
     existing_pairs = get_existing_pairs(structure)
-
     changes = []
 
-    for s in active_strings:
-        current_start = s["start_node"]
-        current_end = s["end_node"]
+    for string_info in active_strings:
+        current_start, current_end = get_string_logical_nodes(string_info)
         current_pair = tuple(sorted((current_start, current_end)))
-        my_mid = get_string_middle_node(s)
+        my_mid = get_string_middle_node(string_info)
 
         existing_pairs_without_self = set(existing_pairs)
         existing_pairs_without_self.discard(current_pair)
@@ -454,17 +508,10 @@ def get_valid_reconnect_changes(structure):
             fixed_other = current_end if end_type == "start" else current_start
 
             for new_target in candidates:
-                if new_target == current_start:
-                    continue
-                if new_target == current_end:
-                    continue
-                if new_target == my_mid:
-                    continue
-                if new_target == fixed_other:
+                if new_target in {current_start, current_end, my_mid, fixed_other}:
                     continue
 
                 new_pair = tuple(sorted((new_target, fixed_other)))
-
                 if new_pair in existing_pairs_without_self:
                     continue
 
@@ -475,10 +522,9 @@ def get_valid_reconnect_changes(structure):
                 if dx < MIN_HORIZONTAL_DISTANCE:
                     continue
 
-                changes.append(("reconnect", s["id"], end_type, new_target))
+                changes.append(("reconnect", string_info["id"], end_type, new_target))
 
     return sorted(set(changes))
-
 
 def get_possible_changes_by_action(structure):
     """現在の構造から、重複しない実行可能な変化を行動別に返す。"""
@@ -509,38 +555,55 @@ def change_signature(change):
 def structure_signature(structure):
     """
     構造の重複判定用の署名を返す。
-    同じ最終接続関係の候補が複数出ることを防ぐために使う。
+    仮想固定点ではなく、本来の接続先で判定する。
     """
-    active_strings = get_active_strings(structure)
-
     items = []
-    for s in active_strings:
-        pair = tuple(sorted((s["start_node"], s["end_node"])))
-        items.append((s["id"], pair[0], pair[1]))
+
+    for string_info in get_active_strings(structure):
+        start_node, end_node = get_string_logical_nodes(string_info)
+        pair = tuple(sorted((start_node, end_node)))
+        items.append((string_info["id"], pair[0], pair[1]))
 
     return tuple(sorted(items))
-
 
 def simulate_structure(structure, steps=350, constraint_iterations=6):
     """
     ひもの物理シミュレーションを行い、垂れ下がった形に落ち着かせる。
-    計算条件は変えず、ループ内の無駄な判定だけを減らす。
+
+    follow_nodeを持つ仮想固定点は追従元の位置へ移動するが、
+    新しいひもから追従元へ力は返さない。
     """
     nodes = structure["nodes"]
 
-    # 削除済みリンクを最初に除外する
     active_links = [
         (idx1, idx2, target_dist)
         for idx1, idx2, target_dist in structure["links"]
         if not (idx1 == 0 and idx2 == 0)
     ]
 
-    # 動くノードだけを最初に取得する
     movable_nodes = [
         node
         for node in nodes
         if not node.get("fixed", False)
     ]
+
+    follow_nodes = [
+        node
+        for node in nodes
+        if "follow_node" in node
+    ]
+
+    def update_follow_nodes():
+        for node in follow_nodes:
+            source_idx = node["follow_node"]
+            if not (0 <= source_idx < len(nodes)):
+                continue
+
+            source = nodes[source_idx]
+            node["x"] = source["x"]
+            node["y"] = source["y"]
+            node["px"] = source["x"]
+            node["py"] = source["y"]
 
     for _ in range(steps):
         for node in movable_nodes:
@@ -554,6 +617,8 @@ def simulate_structure(structure, steps=350, constraint_iterations=6):
             node["y"] += vy - GRAVITY
 
         for _ in range(constraint_iterations):
+            update_follow_nodes()
+
             for idx1, idx2, target_dist in active_links:
                 n1 = nodes[idx1]
                 n2 = nodes[idx2]
@@ -575,6 +640,7 @@ def simulate_structure(structure, steps=350, constraint_iterations=6):
                     n2["x"] += dx * diff * STIFFNESS
                     n2["y"] += dy * diff * STIFFNESS
 
+        update_follow_nodes()
 
 def relax_structure_copy(structure):
     """選択済み構造を直接変更しないためにコピーする。"""
@@ -583,16 +649,15 @@ def relax_structure_copy(structure):
 
 
 def get_active_bounds(structure):
-    """描画範囲を現在の構造に合わせて決める。削除されたひもは計算から除外する。"""
+    """描画範囲を現在の構造に合わせて決める。"""
     nodes = structure["nodes"]
-
     active_node_indices = set(range(NUM_ANCHORS))
 
-    for s in structure["string_data"]:
-        if s.get("is_deleted", False):
+    for string_info in structure["string_data"]:
+        if string_info.get("is_deleted", False):
             continue
 
-        base = NUM_ANCHORS + s["id"] * NUM_INTERNAL_NODES
+        base = get_string_internal_start(string_info)
         active_node_indices.update(range(base, base + NUM_INTERNAL_NODES))
 
     ys = [
@@ -603,15 +668,13 @@ def get_active_bounds(structure):
 
     deleted_path = structure.get("deleted_string_path", None)
     if deleted_path:
-        ys.extend([p[1] for p in deleted_path])
+        ys.extend([point[1] for point in deleted_path])
 
     min_y = min(ys) if ys else -15.0
-
     bottom_limit = min_y - 5.0
     half_width = max(20.0, abs(bottom_limit) * 0.8)
 
     return bottom_limit, half_width
-
 
 def draw_structure(structure, inverted=False, small=False, highlight_new=False):
     """構造をMatplotlibで描画し、PNGバイト列として返す。"""
@@ -917,7 +980,7 @@ def apply_delete_change(parent_structure, change):
     for i in range(target_s["first_link_idx"], target_s["last_link_idx"] + 1):
         structure["links"][i] = (0, 0, 0)
 
-    base = NUM_ANCHORS + target_s["id"] * NUM_INTERNAL_NODES
+    base = get_string_internal_start(target_s)
     for i in range(base, base + NUM_INTERNAL_NODES):
         if 0 <= i < len(structure["nodes"]):
             structure["nodes"][i]["fixed"] = True
@@ -945,17 +1008,21 @@ def apply_reconnect_change(parent_structure, change):
         structure["change_signature"] = change_signature(change)
         return structure
 
+    physics_target = prepare_attachment_node(structure, new_target)
+
     if end_type == "start":
-        l_idx = target_s["first_link_idx"]
-        old_l = structure["links"][l_idx]
-        structure["links"][l_idx] = (new_target, old_l[1], old_l[2])
-        target_s["start_node"] = new_target
+        link_idx = target_s["first_link_idx"]
+        old_link = structure["links"][link_idx]
+        structure["links"][link_idx] = (physics_target, old_link[1], old_link[2])
+        target_s["start_node"] = physics_target
+        target_s["logical_start_node"] = new_target
 
     elif end_type == "end":
-        l_idx = target_s["last_link_idx"]
-        old_l = structure["links"][l_idx]
-        structure["links"][l_idx] = (old_l[0], new_target, old_l[2])
-        target_s["end_node"] = new_target
+        link_idx = target_s["last_link_idx"]
+        old_link = structure["links"][link_idx]
+        structure["links"][link_idx] = (old_link[0], physics_target, old_link[2])
+        target_s["end_node"] = physics_target
+        target_s["logical_end_node"] = new_target
 
     structure["action_performed"] = "reconnect"
     structure["actually_added"] = 0
@@ -965,7 +1032,6 @@ def apply_reconnect_change(parent_structure, change):
     simulate_structure(structure)
 
     return structure
-
 
 def apply_change(parent_structure, change):
     """変化の種類に応じて候補を作る。"""
