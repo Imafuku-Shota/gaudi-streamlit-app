@@ -58,14 +58,17 @@ DAMPING = 0.75
 # 0.0で完全遮断、1.0で通常の物理挙動。0.1なら横方向の力を10％だけ伝える。
 HORIZONTAL_FORCE_SCALE = 0.1
 
-# ひもの基準距離に「横距離＋縦距離」を反映する割合。
-# 0.0で従来の直線距離、1.0で横距離＋縦距離をそのまま使用する。
-# 大きくすると斜め方向のひもに長さの余裕が増えるが、垂れやすくなる。
-XY_DISTANCE_BLEND = 0.30
+# 縦方向の距離を、ひもの基準長へ追加する割合。
+# 大きくすると、高低差がある接続でひもの長さに余裕が増える。
+VERTICAL_SAG_RATIO = 0.25
 
-# 基準距離を直線距離の何倍まで許可するか。
-# 横距離＋縦距離を混ぜても、長くなりすぎないようにする上限。
-MAX_BASE_DISTANCE_RATIO = 1.20
+# 横と縦の両方に距離があるとき、追加で長さを与える割合。
+# min(dx, dy)に掛けるため、斜め方向の接続にだけ強く効く。
+DIAGONAL_SAG_RATIO = 0.15
+
+# 基準長を直線距離の何倍まで許可するか。
+# 追加分が大きくなっても、垂れすぎないように制限する。
+MAX_BASE_DISTANCE_RATIO = 1.25
 
 # ひもの長さ倍率の下限。大きくすると、最も短いひもでもたるみやすくなる。
 STRING_LENGTH_SCALE_MIN = 1.01
@@ -435,18 +438,17 @@ def add_string_to_structure(structure, idx1, idx2, rng=None):
     if straight_dist == 0:
         return False
 
-    # 横距離と縦距離を足した距離
-    xy_dist = dx + dy
+    # 高低差がある接続には、縦方向の距離に応じて長さを追加する
+    vertical_extra = dy * VERTICAL_SAG_RATIO
 
-    # 直線距離へ横・縦距離を一部反映する
-    blended_dist = (
-        straight_dist * (1.0 - XY_DISTANCE_BLEND)
-        + xy_dist * XY_DISTANCE_BLEND
-    )
+    # 横と縦の両方に距離がある斜め接続には、さらに長さを追加する
+    diagonal_extra = min(dx, dy) * DIAGONAL_SAG_RATIO
+
+    base_dist = straight_dist + vertical_extra + diagonal_extra
 
     # 長くなりすぎて深く垂れないよう、直線距離に対する上限を設ける
     max_base_dist = straight_dist * MAX_BASE_DISTANCE_RATIO
-    dist = min(blended_dist, max_base_dist)
+    dist = min(base_dist, max_base_dist)
 
     # rngが渡されていない場合も動作できるようにする
     if rng is None:
