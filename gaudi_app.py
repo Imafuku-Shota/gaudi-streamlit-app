@@ -135,7 +135,9 @@ def deep_copy_structure(structure):
         "actions_taken",
         "actually_added",
         "highlighted_string_id",
+        "highlighted_string_ids",
         "deleted_string_path",
+        "deleted_string_paths",
         "change_signature"
     ]
 
@@ -143,12 +145,33 @@ def deep_copy_structure(structure):
         if key in structure:
             if key == "deleted_string_path":
                 copied[key] = [tuple(p) for p in structure[key]]
-            elif key == "actions_taken":
+            elif key == "deleted_string_paths":
+                copied[key] = [
+                    [tuple(point) for point in path]
+                    for path in structure[key]
+                ]
+            elif key in {"actions_taken", "highlighted_string_ids"}:
                 copied[key] = list(structure[key])
             else:
                 copied[key] = structure[key]
 
     return copied
+
+
+def clear_change_display_metadata(structure):
+    """
+    前の選択段階で使用した青表示情報だけを消す。
+    構造や物理状態には手を加えない。
+    """
+    for key in [
+        "highlighted_string_id",
+        "highlighted_string_ids",
+        "deleted_string_path",
+        "deleted_string_paths"
+    ]:
+        structure.pop(key, None)
+
+    return structure
 
 
 def format_node_label(idx):
@@ -705,9 +728,15 @@ def get_active_bounds(structure):
         if isinstance(i, int) and 0 <= i < len(nodes)
     ]
 
+    deleted_paths = list(structure.get("deleted_string_paths", []))
+
+    # 旧形式のデータにも対応する
     deleted_path = structure.get("deleted_string_path", None)
     if deleted_path:
-        ys.extend([point[1] for point in deleted_path])
+        deleted_paths.append(deleted_path)
+
+    for path in deleted_paths:
+        ys.extend([point[1] for point in path])
 
     min_y = min(ys) if ys else -15.0
     bottom_limit = min_y - 5.0
@@ -753,8 +782,14 @@ def draw_structure(structure, inverted=False, small=False, highlight_new=False):
 
         is_highlighted = False
         if highlight_new:
+            highlighted_ids = set(structure.get("highlighted_string_ids", []))
+
+            # 旧形式のデータにも対応する
             if "highlighted_string_id" in structure:
-                is_highlighted = (s["id"] == structure["highlighted_string_id"])
+                highlighted_ids.add(structure["highlighted_string_id"])
+
+            if highlighted_ids:
+                is_highlighted = s["id"] in highlighted_ids
             else:
                 is_highlighted = (
                     parent_string_count is not None
@@ -775,26 +810,31 @@ def draw_structure(structure, inverted=False, small=False, highlight_new=False):
             zorder=z_order
         )
 
-    # 削除の場合は、削除前のひもを青の点線で表示する
-    deleted_path = structure.get("deleted_string_path", None)
-    if (
-        highlight_new
-        and structure.get("action_performed") == "delete"
-        and deleted_path
-    ):
-        deleted_xs = [p[0] for p in deleted_path]
-        deleted_ys = [p[1] for p in deleted_path]
+    # 削除したひもは、削除前の形を青線で重ねて表示する
+    if highlight_new:
+        deleted_paths = list(structure.get("deleted_string_paths", []))
 
-        ax.plot(
-            deleted_xs,
-            deleted_ys,
-            color="#1C83E1",
-            lw=line_width + 1.0,
-            linestyle=(0, (1.0, 2.0)),
-            dash_capstyle="round",
-            solid_joinstyle="round",
-            zorder=9
-        )
+        # 旧形式のデータにも対応する
+        deleted_path = structure.get("deleted_string_path", None)
+        if deleted_path:
+            deleted_paths.append(deleted_path)
+
+        for path in deleted_paths:
+            if not path:
+                continue
+
+            deleted_xs = [point[0] for point in path]
+            deleted_ys = [point[1] for point in path]
+
+            ax.plot(
+                deleted_xs,
+                deleted_ys,
+                color="#1C83E1",
+                lw=line_width + 1.0,
+                solid_joinstyle="round",
+                solid_capstyle="round",
+                zorder=9
+            )
 
     bottom_limit, half_width = get_active_bounds(structure)
 
@@ -983,7 +1023,10 @@ def apply_add_change(parent_structure, change):
     structure["change_signature"] = change_signature(change)
 
     if ok:
-        structure["highlighted_string_id"] = structure["string_data"][-1]["id"]
+        new_string_id = structure["string_data"][-1]["id"]
+        highlighted_ids = structure.setdefault("highlighted_string_ids", [])
+        if new_string_id not in highlighted_ids:
+            highlighted_ids.append(new_string_id)
 
     return structure
 
@@ -1007,8 +1050,9 @@ def apply_delete_change(parent_structure, change):
         structure["change_signature"] = change_signature(change)
         return structure
 
-    # 削除前の形を保存する
-    structure["deleted_string_path"] = capture_string_path(structure, target_s)
+    # 削除前の形を保存し、同じ候補内の複数変更をすべて表示できるようにする
+    deleted_path = capture_string_path(structure, target_s)
+    structure.setdefault("deleted_string_paths", []).append(deleted_path)
 
     structure["action_performed"] = "delete"
     structure["actually_added"] = 0
@@ -1065,7 +1109,11 @@ def apply_reconnect_change(parent_structure, change):
 
     structure["action_performed"] = "reconnect"
     structure["actually_added"] = 0
-    structure["highlighted_string_id"] = target_s["id"]
+
+    highlighted_ids = structure.setdefault("highlighted_string_ids", [])
+    if target_s["id"] not in highlighted_ids:
+        highlighted_ids.append(target_s["id"])
+
     structure["change_signature"] = change_signature(change)
 
     simulate_structure(structure)
@@ -1113,8 +1161,13 @@ def generate_unique_next_candidates(parent_structure, num_choices):
     while len(candidates) < num_choices and attempts < max_attempts:
         attempts += 1
 
+        # 前段階の青表示を引き継がず、今回の2変化だけを記録する
+        candidate_base = clear_change_display_metadata(
+            deep_copy_structure(parent_structure)
+        )
+
         reconnect_change = rng.choice(reconnect_changes)
-        candidate = apply_change(parent_structure, reconnect_change)
+        candidate = apply_change(candidate_base, reconnect_change)
 
         add_changes = get_valid_add_pairs(candidate)
 
