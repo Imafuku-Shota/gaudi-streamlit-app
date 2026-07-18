@@ -54,6 +54,10 @@ STIFFNESS = 0.95
 # 前ステップの速度を残す割合。小さくすると早く静まり、大きくすると揺れが残りやすい。
 DAMPING = 0.75
 
+# 線から線へ接続したとき、横方向の力を接続元へ伝える割合。
+# 0.0で完全遮断、1.0で通常の物理挙動。0.1なら横方向の力を10％だけ伝える。
+HORIZONTAL_FORCE_SCALE = 0.1
+
 # ひもの長さ倍率の下限。大きくすると、最も短いひもでもたるみやすくなる。
 STRING_LENGTH_SCALE_MIN = 1.01
 
@@ -648,8 +652,8 @@ def simulate_structure(structure, steps=350, constraint_iterations=6):
     ひもの物理シミュレーションを行い、垂れ下がった形に落ち着かせる。
 
     vertical_follow_nodeを持つ仮想接続点は、接続元のX座標だけを追従する。
-    新しいひもから受ける横方向の補正は捨て、縦方向の補正だけを
-    接続元ノードへ伝える。
+    新しいひもから受ける横方向の補正は設定した割合だけ伝え、
+    縦方向の補正はそのまま接続元ノードへ伝える。
     """
     nodes = structure["nodes"]
 
@@ -684,13 +688,14 @@ def simulate_structure(structure, steps=350, constraint_iterations=6):
         return source
 
     def apply_node_correction(node, correction_x, correction_y):
-        """通常点にはXY補正、仮想接続点にはY補正だけを適用する。"""
+        """通常点にはXY補正、仮想接続点には横を減衰させたXY補正を適用する。"""
         if "vertical_follow_node" in node:
             source = sync_vertical_follow_node(node)
             if source is None:
                 return
 
-            # 横方向の補正は破棄し、縦方向だけを接続元へ伝える
+            # 横方向は設定した割合だけ、縦方向はそのまま接続元へ伝える
+            source["x"] += correction_x * HORIZONTAL_FORCE_SCALE
             source["y"] += correction_y
             node["x"] = source["x"]
             node["y"] = source["y"]
