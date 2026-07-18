@@ -1477,7 +1477,7 @@ if st.session_state.app_phase == "choice":
             render_candidate_grid(candidates)
 
     else:
-        # 初回は選択済み骨格がないため、候補を画面全体に表示する
+        # 初回も画面全体へ広げず、中央の固定幅に候補を配置する
         st.write(
             f"最初に、ランダムに{INITIAL_STRINGS}本のひもを作った"
             "候補を4つ表示しています。"
@@ -1488,7 +1488,10 @@ if st.session_state.app_phase == "choice":
             f"{total_choices}"
         )
 
-        render_candidate_grid(candidates)
+        initial_outer_cols = st.columns([0.20, 0.60, 0.20])
+
+        with initial_outer_cols[1]:
+            render_candidate_grid(candidates)
 
     st.markdown("---")
 
