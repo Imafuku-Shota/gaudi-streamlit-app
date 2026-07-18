@@ -1565,7 +1565,9 @@ elif st.session_state.app_phase == "inverted":
     inverted_image_cols = st.columns([0.30, 0.40, 0.30])
 
     with inverted_image_cols[1]:
-        st.image(
+        # 画面遷移前に消せるよう、画像をプレースホルダー内へ表示する
+        inverted_image_placeholder = st.empty()
+        inverted_image_placeholder.image(
             ai_input_image_bytes,
             use_container_width=True
         )
@@ -1574,6 +1576,8 @@ elif st.session_state.app_phase == "inverted":
 
     with col1:
         if st.button("AI画像を生成する", type="primary", use_container_width=True):
+            # AI生成中に前画面の画像が灰色で残らないよう、先に消してから遷移する
+            inverted_image_placeholder.empty()
             st.session_state.app_phase = "generate"
             st.rerun()
 
