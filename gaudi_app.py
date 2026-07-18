@@ -10,7 +10,7 @@ import itertools
 import base64
 from PIL import Image
 
-st.set_page_config(layout="centered")
+st.set_page_config(layout="wide")
 
 # ============================================================
 # 設定値
@@ -1428,7 +1428,7 @@ if st.session_state.app_phase == "choice":
     ):
         # 2回目以降は、左に選択済み骨格、右に候補を配置する
         left_col, right_col = st.columns(
-            [1.0, 2.2],
+            [1.0, 2.8],
             gap="large"
         )
 
@@ -1439,19 +1439,22 @@ if st.session_state.app_phase == "choice":
                 st.session_state.selected_structure
             )
 
-            st.image(
-                draw_structure(
-                    st.session_state.selected_structure,
-                    inverted=False,
-                    small=True,
-                    highlight_new=False
-                ),
-                use_container_width=True
-            )
+            selected_inner_cols = st.columns([0.08, 0.84, 0.08])
 
-            st.caption(
-                f"選択中の骨組み：ひも {selected_count}本"
-            )
+            with selected_inner_cols[1]:
+                st.image(
+                    draw_structure(
+                        st.session_state.selected_structure,
+                        inverted=False,
+                        small=True,
+                        highlight_new=False
+                    ),
+                    use_container_width=True
+                )
+
+                st.caption(
+                    f"選択中の骨組み：ひも {selected_count}本"
+                )
 
             st.caption(
                 f"選択段階：{st.session_state.choice_step + 1} / "
