@@ -1364,63 +1364,68 @@ if st.session_state.app_phase == "choice":
                 candidate = candidate_list[idx]
 
                 with cols[col]:
-                    highlight_new = st.session_state.choice_step > 0
+                    # 候補カードをカラム幅の中央50％に配置し、
+                    # ワイド画面でも画像が大きくなりすぎないようにする。
+                    candidate_inner_cols = st.columns([0.25, 0.50, 0.25])
 
-                    st.image(
-                        draw_structure(
-                            candidate,
-                            inverted=False,
-                            small=True,
-                            highlight_new=highlight_new
-                        ),
-                        use_container_width=True
-                    )
+                    with candidate_inner_cols[1]:
+                        highlight_new = st.session_state.choice_step > 0
 
-                    current_count = count_active_strings(candidate)
-
-                    if st.session_state.choice_step == 0:
-                        st.caption(
-                            f"案 {idx + 1}：初期ひも {current_count}本"
+                        st.image(
+                            draw_structure(
+                                candidate,
+                                inverted=False,
+                                small=True,
+                                highlight_new=highlight_new
+                            ),
+                            use_container_width=True
                         )
-                    else:
-                        act = candidate.get("action_performed", "add")
 
-                        if act == "reconnect_then_add":
+                        current_count = count_active_strings(candidate)
+
+                        if st.session_state.choice_step == 0:
                             st.caption(
-                                f"案 {idx + 1}：🔄 つなぎ直し → "
-                                f"🟢 ひも追加（計 {current_count}本）"
+                                f"案 {idx + 1}：初期ひも {current_count}本"
                             )
                         else:
-                            action_labels = {
-                                "add": "🟢 ひも追加",
-                                "delete": "🗑️ ひも削除（削除前を青点線）",
-                                "reconnect": "🔄 つなぎ直し",
-                                "initial": "初期ひも"
-                            }
+                            act = candidate.get("action_performed", "add")
 
-                            label = action_labels.get(act, "ひも追加")
-                            st.caption(
-                                f"案 {idx + 1}：{label}（計 {current_count}本）"
+                            if act == "reconnect_then_add":
+                                st.caption(
+                                    f"案 {idx + 1}：🔄 つなぎ直し → "
+                                    f"🟢 ひも追加（計 {current_count}本）"
+                                )
+                            else:
+                                action_labels = {
+                                    "add": "🟢 ひも追加",
+                                    "delete": "🗑️ ひも削除（削除前を青点線）",
+                                    "reconnect": "🔄 つなぎ直し",
+                                    "initial": "初期ひも"
+                                }
+
+                                label = action_labels.get(act, "ひも追加")
+                                st.caption(
+                                    f"案 {idx + 1}：{label}（計 {current_count}本）"
+                                )
+
+                        if st.button(
+                            f"案 {idx + 1} を選択",
+                            key=f"select_{st.session_state.choice_step}_{idx}",
+                            use_container_width=True
+                        ):
+                            st.session_state.selected_structure = deep_copy_structure(
+                                candidate
                             )
+                            st.session_state.generated_image_bytes = None
+                            st.session_state.ai_input_image_bytes = None
 
-                    if st.button(
-                        f"案 {idx + 1} を選択",
-                        key=f"select_{st.session_state.choice_step}_{idx}",
-                        use_container_width=True
-                    ):
-                        st.session_state.selected_structure = deep_copy_structure(
-                            candidate
-                        )
-                        st.session_state.generated_image_bytes = None
-                        st.session_state.ai_input_image_bytes = None
+                            if st.session_state.choice_step >= ADDITION_ROUNDS:
+                                st.session_state.app_phase = "final"
+                            else:
+                                st.session_state.choice_step += 1
+                                st.session_state.need_generate_next = True
 
-                        if st.session_state.choice_step >= ADDITION_ROUNDS:
-                            st.session_state.app_phase = "final"
-                        else:
-                            st.session_state.choice_step += 1
-                            st.session_state.need_generate_next = True
-
-                        st.rerun()
+                            st.rerun()
 
     if (
         st.session_state.choice_step > 0
