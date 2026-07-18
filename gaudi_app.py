@@ -14,9 +14,8 @@ st.set_page_config(layout="centered")
 # ============================================================
 # 設定値
 # ============================================================
-# 提案A: 横幅を広げ、固定点を増やす
-NUM_ANCHORS = 12
-anchors_x = np.linspace(-30.0, 30.0, NUM_ANCHORS)
+NUM_ANCHORS = 8
+anchors_x = np.linspace(-17.5, 17.5, NUM_ANCHORS)
 anchors = [{"x": float(x), "y": 0.0} for x in anchors_x]
 
 NUM_NEW_NODES = 41
@@ -27,6 +26,7 @@ NUM_CHOICES = 4
 INITIAL_STRINGS = 3
 ADD_STRINGS_PER_ROUND = 1
 ADDITION_ROUNDS = 4
+CHANGES_PER_CANDIDATE = 2
 
 GRAVITY = 0.08
 STIFFNESS = 0.95
@@ -154,7 +154,11 @@ def deep_copy_structure(structure):
 def format_node_label(idx):
     """ノード番号を画面表示用の名前に変換する。"""
     if idx < NUM_ANCHORS:
-        return f"天井 {idx + 1}"
+        positions = [
+            "一番左", "左から2番目", "左から3番目", "中央の左",
+            "中央の右", "右から3番目", "右から2番目", "一番右"
+        ]
+        return f"天井 {idx + 1} ({positions[idx]})"
 
     s_id = (idx - NUM_ANCHORS) // NUM_INTERNAL_NODES
     return f"ひも {s_id + 1} の中央"
@@ -580,24 +584,20 @@ def get_active_bounds(structure):
         base = NUM_ANCHORS + s["id"] * NUM_INTERNAL_NODES
         active_node_indices.update(range(base, base + NUM_INTERNAL_NODES))
 
-    ys = []
-    xs = []
-    for i in active_node_indices:
-        if isinstance(i, int) and 0 <= i < len(nodes):
-            ys.append(nodes[i]["y"])
-            xs.append(nodes[i]["x"])
+    ys = [
+        nodes[i]["y"]
+        for i in active_node_indices
+        if isinstance(i, int) and 0 <= i < len(nodes)
+    ]
 
     deleted_path = structure.get("deleted_string_path", None)
     if deleted_path:
         ys.extend([p[1] for p in deleted_path])
-        xs.extend([p[0] for p in deleted_path])
 
     min_y = min(ys) if ys else -15.0
-    bottom_limit = min_y - 5.0
 
-    # 横方向のはみ出しを防ぐため、X座標の最大値に合わせて枠を広げる
-    max_abs_x = max([abs(x) for x in xs]) if xs else 20.0
-    half_width = max(max_abs_x + 5.0, abs(bottom_limit) * 0.8)
+    bottom_limit = min_y - 5.0
+    half_width = max(20.0, abs(bottom_limit) * 0.8)
 
     return bottom_limit, half_width
 
@@ -619,11 +619,8 @@ def draw_structure(structure, inverted=False, small=False, highlight_new=False):
         s=anchor_size,
         zorder=10
     )
-    
-    # 天井の線を固定の -20~20 から、アンカーの最大幅に合わせて自動延長する
-    max_anchor_x = max(abs(anchors_x[0]), abs(anchors_x[-1]))
     ax.plot(
-        [-(max_anchor_x + 5), max_anchor_x + 5],
+        [-20, 20],
         [0, 0],
         color="#777777",
         lw=2 if small else 4,
@@ -975,39 +972,43 @@ def apply_change(parent_structure, change):
     return relax_structure_copy(parent_structure)
 
 
-def generate_unique_next_candidates(parent_structure, num_choices, num_changes=3):
+def generate_unique_next_candidates(
+    parent_structure,
+    num_choices,
+    num_changes=CHANGES_PER_CANDIDATE
+):
     """
-    選択済み構造を親として、重複しない変化を複数回（デフォルト3回）加えた候補を作る。
+    選択済み構造を親として、重複しない変化を複数回加えた候補を作る。
     最終的な接続関係が同じ候補は出さない。
     """
     rng = random.Random(random.randint(0, 10**9))
     candidates = []
     used_structure_signatures = set()
 
+    parent_signature = structure_signature(parent_structure)
+
     attempts = 0
-    max_attempts = 2000
+    max_attempts = 1000
 
     while len(candidates) < num_choices and attempts < max_attempts:
         attempts += 1
         candidate = parent_structure
         actions_taken = []
-        
-        # 「必ず1回は追加(add)を含める」ための計画リストを作り、順番をシャッフルする
+
+        # 2回の変化のうち、追加可能なら最低1回は追加を含める
         plan = ["add"] + ["any"] * (num_changes - 1)
         rng.shuffle(plan)
-        
+
         for step_type in plan:
             possible_by_action = get_possible_changes_by_action(candidate)
-            
-            # 'add' が指定されていて、かつ追加可能な箇所がある場合は 'add' を強制
-            if step_type == "add" and len(possible_by_action.get("add", [])) > 0:
+
+            if step_type == "add" and possible_by_action.get("add"):
                 available_actions = ["add"]
             else:
-                # それ以外（'any'や、追加できる場所がない場合）は実行可能なものからランダム
                 available_actions = [
                     action
                     for action, changes in possible_by_action.items()
-                    if len(changes) > 0
+                    if changes
                 ]
 
             if not available_actions:
@@ -1020,8 +1021,12 @@ def generate_unique_next_candidates(parent_structure, num_choices, num_changes=3
 
         s_sig = structure_signature(candidate)
 
-        # 全く変化が起きなかった、またはすでに同じ構造がある場合はやり直す
-        if not actions_taken or s_sig in used_structure_signatures or s_sig == structure_signature(parent_structure):
+        # 2回とも実行できなかった候補、親と同じ候補、重複候補は除外
+        if (
+            len(actions_taken) != num_changes
+            or s_sig == parent_signature
+            or s_sig in used_structure_signatures
+        ):
             continue
 
         candidate["action_performed"] = "multiple"
@@ -1129,7 +1134,7 @@ if st.session_state.app_phase == "choice":
     if st.session_state.choice_step == 0:
         st.write("最初に、ランダムに3本のひもを作った候補を4つ表示しています。")
     else:
-        st.write("選択した形をもとに、[追加・削除・つなぎ修正]をランダムに実行した候補を表示しています。")
+        st.write("選んだ形をもとに、[追加・削除・つなぎ直し]を2回実行した候補を表示しています。")
 
     st.caption(
         f"選択段階: {st.session_state.choice_step + 1} / {total_choices}"
@@ -1171,12 +1176,19 @@ if st.session_state.app_phase == "choice":
                     st.caption(f"案 {idx + 1}：初期ひも {current_count}本")
                 else:
                     act = candidate.get("action_performed", "add")
-                    
+
                     if act == "multiple":
-                        # 3回変化した場合はアイコンを並べて表示する
-                        icon_map = {"add": "🟢", "delete": "🗑️", "reconnect": "🔄"}
-                        icons = "".join([icon_map.get(a, "") for a in candidate.get("actions_taken", [])])
-                        st.caption(f"案 {idx + 1}：3回変化 {icons} (計 {current_count}本)")
+                        icon_map = {
+                            "add": "🟢",
+                            "delete": "🗑️",
+                            "reconnect": "🔄"
+                        }
+                        actions = candidate.get("actions_taken", [])
+                        icons = "".join(icon_map.get(a, "") for a in actions)
+                        st.caption(
+                            f"案 {idx + 1}：{len(actions)}回変化 "
+                            f"{icons}（計 {current_count}本）"
+                        )
                     else:
                         action_labels = {
                             "add": "🟢 ひも追加",
@@ -1185,7 +1197,9 @@ if st.session_state.app_phase == "choice":
                             "initial": "初期ひも"
                         }
                         label = action_labels.get(act, "ひも追加")
-                        st.caption(f"案 {idx + 1}：{label} (計 {current_count}本)")
+                        st.caption(
+                            f"案 {idx + 1}：{label}（計 {current_count}本）"
+                        )
 
                 if st.button(
                     f"案 {idx + 1} を選択",
