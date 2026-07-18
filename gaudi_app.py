@@ -1586,7 +1586,14 @@ elif st.session_state.app_phase == "generate":
 
     with col1:
         st.subheader("📐 入力骨組み")
-        st.image(st.session_state.ai_input_image_bytes, use_container_width=True)
+
+        input_inner_cols = st.columns([0.10, 0.80, 0.10])
+
+        with input_inner_cols[1]:
+            st.image(
+                st.session_state.ai_input_image_bytes,
+                use_container_width=True
+            )
 
     with col2:
         st.subheader("🎨 AI生成結果")
@@ -1603,7 +1610,13 @@ elif st.session_state.app_phase == "generate":
                 )
 
         if st.session_state.generated_image_bytes:
-            st.image(st.session_state.generated_image_bytes, use_container_width=True)
+            result_inner_cols = st.columns([0.10, 0.80, 0.10])
+
+            with result_inner_cols[1]:
+                st.image(
+                    st.session_state.generated_image_bytes,
+                    use_container_width=True
+                )
 
     st.markdown("---")
 
