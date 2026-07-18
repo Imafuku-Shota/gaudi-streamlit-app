@@ -12,6 +12,18 @@ from PIL import Image
 
 st.set_page_config(layout="wide")
 
+# 画面上部の余白を小さくし、ページ全体を少し上へ寄せる。
+st.markdown(
+    """
+    <style>
+    .block-container {
+        padding-top: 2rem;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 # ============================================================
 # 設定値
 # ============================================================
