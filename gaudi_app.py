@@ -15,23 +15,52 @@ st.set_page_config(layout="centered")
 # ============================================================
 # 設定値
 # ============================================================
+# 天井に並べる固定点の数。増やすと接続候補となる天井点が増える。
 NUM_ANCHORS = 12
+
+# 天井固定点を配置する横方向の範囲。現在は -17.5 ～ 17.5 に等間隔で配置する。
 anchors_x = np.linspace(-17.5, 17.5, NUM_ANCHORS)
+
+# 固定点の座標データ。通常は直接変更せず、NUM_ANCHORSとanchors_xから自動生成する。
 anchors = [{"x": float(x), "y": 0.0} for x in anchors_x]
 
+# ひも1本を表現する全ノード数。増やすと曲線が滑らかになるが、計算が重くなる。
 NUM_NEW_NODES = 41
+
+# ひもの両端を除いた内部ノード数。NUM_NEW_NODESから自動計算する。
 NUM_INTERNAL_NODES = NUM_NEW_NODES - 2
+
+# 内部ノード列の中央位置。通常は直接変更しない。
 MID_NODE_OFFSET = NUM_INTERNAL_NODES // 2
 
+# 1回の選択画面に表示する候補数。
 NUM_CHOICES = 4
+
+# 最初の候補に作るひもの本数。
 INITIAL_STRINGS = 3
+
+# 1回の追加処理で増やすひもの本数。現在の候補生成では直接使われていない。
 ADD_STRINGS_PER_ROUND = 1
+
+# 初期選択後に繰り返す追加選択の回数。増やすと最終形までの選択回数が増える。
 ADDITION_ROUNDS = 4
 
+# 1ステップごとに下向きへ加える重力。大きくするとひもが強く下へ引かれる。
 GRAVITY = 0.08
+
+# ひもが目標の長さを保とうとする強さ。大きいほど硬く、小さいほど伸びやすい。
 STIFFNESS = 0.95
+
+# 前ステップの速度を残す割合。小さくすると早く静まり、大きくすると揺れが残りやすい。
 DAMPING = 0.75
 
+# ひもの長さ倍率の下限。大きくすると、最も短いひもでもたるみやすくなる。
+STRING_LENGTH_SCALE_MIN = 1.01
+
+# ひもの長さ倍率の上限。大きくすると、深く垂れる長いひもが作られやすくなる。
+STRING_LENGTH_SCALE_MAX = 1.06
+
+# 接続を許可する2点間の最小水平距離。大きくすると短い横幅のひもが作られにくくなる。
 MIN_HORIZONTAL_DISTANCE = 3.0
 
 # ============================================================
@@ -364,7 +393,7 @@ def get_string_by_id(structure, string_id):
     return None
 
 
-def add_string_to_structure(structure, idx1, idx2):
+def add_string_to_structure(structure, idx1, idx2, rng=None):
     """
     指定した2点の間に、新しいひもを1本追加する。
 
@@ -388,7 +417,15 @@ def add_string_to_structure(structure, idx1, idx2):
     if dist == 0:
         return False
 
-    total_len = dist * 1.002
+    # rngが渡されていない場合も動作できるようにする
+    if rng is None:
+        rng = random
+
+    length_scale = rng.uniform(
+        STRING_LENGTH_SCALE_MIN,
+        STRING_LENGTH_SCALE_MAX
+    )
+    total_len = dist * length_scale
     seg_len = total_len / (NUM_NEW_NODES - 1)
 
     new_x = np.linspace(p1["x"], p2["x"], NUM_NEW_NODES)
@@ -517,7 +554,7 @@ def add_random_strings(structure, num_strings, rng):
         if pair is None:
             break
 
-        ok = add_string_to_structure(structure, pair[0], pair[1])
+        ok = add_string_to_structure(structure, pair[0], pair[1], rng=rng)
         if ok:
             added += 1
 
@@ -1007,7 +1044,7 @@ def make_initial_candidate(seed):
 # ============================================================
 # 変化を適用する処理
 # ============================================================
-def apply_add_change(parent_structure, change):
+def apply_add_change(parent_structure, change, rng=None):
     """指定された追加変化を適用した候補を作る。"""
     structure = relax_structure_copy(parent_structure)
 
@@ -1016,7 +1053,7 @@ def apply_add_change(parent_structure, change):
 
     _, idx1, idx2 = change
 
-    ok = add_string_to_structure(structure, idx1, idx2)
+    ok = add_string_to_structure(structure, idx1, idx2, rng=rng)
     simulate_structure(structure)
 
     structure["action_performed"] = "add"
@@ -1126,12 +1163,12 @@ def apply_reconnect_change(parent_structure, change):
 
     return structure
 
-def apply_change(parent_structure, change):
+def apply_change(parent_structure, change, rng=None):
     """変化の種類に応じて候補を作る。"""
     action = change[0]
 
     if action == "add":
-        return apply_add_change(parent_structure, change)
+        return apply_add_change(parent_structure, change, rng=rng)
 
     if action == "delete":
         return apply_delete_change(parent_structure, change)
@@ -1183,7 +1220,7 @@ def generate_unique_next_candidates(parent_structure, num_choices):
         idx1, idx2 = rng.choice(add_changes)
         add_change = ("add", idx1, idx2)
 
-        candidate = apply_change(candidate, add_change)
+        candidate = apply_change(candidate, add_change, rng=rng)
         candidate_signature = structure_signature(candidate)
 
         if candidate_signature == parent_signature:
