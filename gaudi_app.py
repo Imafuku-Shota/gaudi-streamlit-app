@@ -810,7 +810,7 @@ def draw_structure(structure, inverted=False, small=False, highlight_new=False):
             zorder=z_order
         )
 
-    # 削除したひもは、削除前の形を青線で重ねて表示する
+    # 削除したひもは、削除前の形を青の点線で重ねて表示する
     if highlight_new:
         deleted_paths = list(structure.get("deleted_string_paths", []))
 
@@ -831,8 +831,9 @@ def draw_structure(structure, inverted=False, small=False, highlight_new=False):
                 deleted_ys,
                 color="#1C83E1",
                 lw=line_width + 1.0,
+                linestyle=(0, (1.0, 2.0)),
+                dash_capstyle="round",
                 solid_joinstyle="round",
-                solid_capstyle="round",
                 zorder=9
             )
 
