@@ -1343,15 +1343,102 @@ if st.session_state.app_phase == "choice":
     st.title("🏗️ ガウディ建築の骨組みを選ぶ")
 
     total_choices = 1 + ADDITION_ROUNDS
+    candidates = st.session_state.candidates
 
-    # 2回目以降は、前回選択した骨組みを画面上部に表示する
-    if st.session_state.choice_step > 0 and st.session_state.selected_structure is not None:
-        st.subheader("前回選択した骨組み")
+    if len(candidates) < NUM_CHOICES:
+        st.warning(
+            f"重複しない変化だけを表示しているため、候補数が {len(candidates)} 個になっています。"
+        )
 
-        selected_count = count_active_strings(st.session_state.selected_structure)
+    def render_candidate_grid(candidate_list):
+        """候補を2列×2行で表示する。"""
+        for row in range(2):
+            cols = st.columns(2)
 
-        selected_cols = st.columns([1, 2, 1])
-        with selected_cols[1]:
+            for col in range(2):
+                idx = row * 2 + col
+
+                if idx >= len(candidate_list):
+                    continue
+
+                candidate = candidate_list[idx]
+
+                with cols[col]:
+                    highlight_new = st.session_state.choice_step > 0
+
+                    st.image(
+                        draw_structure(
+                            candidate,
+                            inverted=False,
+                            small=True,
+                            highlight_new=highlight_new
+                        ),
+                        use_container_width=True
+                    )
+
+                    current_count = count_active_strings(candidate)
+
+                    if st.session_state.choice_step == 0:
+                        st.caption(
+                            f"案 {idx + 1}：初期ひも {current_count}本"
+                        )
+                    else:
+                        act = candidate.get("action_performed", "add")
+
+                        if act == "reconnect_then_add":
+                            st.caption(
+                                f"案 {idx + 1}：🔄 つなぎ直し → "
+                                f"🟢 ひも追加（計 {current_count}本）"
+                            )
+                        else:
+                            action_labels = {
+                                "add": "🟢 ひも追加",
+                                "delete": "🗑️ ひも削除（削除前を青点線）",
+                                "reconnect": "🔄 つなぎ直し",
+                                "initial": "初期ひも"
+                            }
+
+                            label = action_labels.get(act, "ひも追加")
+                            st.caption(
+                                f"案 {idx + 1}：{label}（計 {current_count}本）"
+                            )
+
+                    if st.button(
+                        f"案 {idx + 1} を選択",
+                        key=f"select_{st.session_state.choice_step}_{idx}",
+                        use_container_width=True
+                    ):
+                        st.session_state.selected_structure = deep_copy_structure(
+                            candidate
+                        )
+                        st.session_state.generated_image_bytes = None
+                        st.session_state.ai_input_image_bytes = None
+
+                        if st.session_state.choice_step >= ADDITION_ROUNDS:
+                            st.session_state.app_phase = "final"
+                        else:
+                            st.session_state.choice_step += 1
+                            st.session_state.need_generate_next = True
+
+                        st.rerun()
+
+    if (
+        st.session_state.choice_step > 0
+        and st.session_state.selected_structure is not None
+    ):
+        # 2回目以降は、左に選択済み骨格、右に候補を配置する
+        left_col, right_col = st.columns(
+            [1.0, 2.2],
+            gap="large"
+        )
+
+        with left_col:
+            st.subheader("前回選択した骨組み")
+
+            selected_count = count_active_strings(
+                st.session_state.selected_structure
+            )
+
             st.image(
                 draw_structure(
                     st.session_state.selected_structure,
@@ -1361,92 +1448,46 @@ if st.session_state.app_phase == "choice":
                 ),
                 use_container_width=True
             )
-            st.caption(f"選択中の骨組み：ひも {selected_count}本")
 
-        st.markdown("---")
+            st.caption(
+                f"選択中の骨組み：ひも {selected_count}本"
+            )
 
-    if st.session_state.choice_step == 0:
-        st.write("最初に、ランダムに5本のひもを作った候補を4つ表示しています。")
+            st.caption(
+                f"選択段階：{st.session_state.choice_step + 1} / "
+                f"{total_choices}"
+            )
+
+        with right_col:
+            st.subheader("次の候補")
+
+            st.write(
+                "選んだ形をもとに、既存のひもを1本つなぎ直した後、"
+                "新しいひもを1本追加した候補を表示しています。"
+            )
+
+            render_candidate_grid(candidates)
+
     else:
-        st.write("選んだ形をもとに、既存のひもを1本つなぎ直した後、新しいひもを1本追加した候補を表示しています。")
-
-    st.caption(
-        f"選択段階: {st.session_state.choice_step + 1} / {total_choices}"
-    )
-
-    candidates = st.session_state.candidates
-
-    if len(candidates) < NUM_CHOICES:
-        st.warning(
-            f"重複しない変化だけを表示しているため、候補数が {len(candidates)} 個になっています。"
+        # 初回は選択済み骨格がないため、候補を画面全体に表示する
+        st.write(
+            f"最初に、ランダムに{INITIAL_STRINGS}本のひもを作った"
+            "候補を4つ表示しています。"
         )
 
-    # 2列×2行で候補を表示
-    for row in range(2):
-        cols = st.columns(2)
-        for col in range(2):
-            idx = row * 2 + col
-            if idx >= len(candidates):
-                continue
+        st.caption(
+            f"選択段階：{st.session_state.choice_step + 1} / "
+            f"{total_choices}"
+        )
 
-            candidate = candidates[idx]
-
-            with cols[col]:
-                highlight_new = st.session_state.choice_step > 0
-
-                st.image(
-                    draw_structure(
-                        candidate,
-                        inverted=False,
-                        small=True,
-                        highlight_new=highlight_new
-                    ),
-                    use_container_width=True
-                )
-
-                current_count = count_active_strings(candidate)
-
-                if st.session_state.choice_step == 0:
-                    st.caption(f"案 {idx + 1}：初期ひも {current_count}本")
-                else:
-                    act = candidate.get("action_performed", "add")
-
-                    if act == "reconnect_then_add":
-                        st.caption(
-                            f"案 {idx + 1}：🔄 つなぎ直し → "
-                            f"🟢 ひも追加（計 {current_count}本）"
-                        )
-                    else:
-                        action_labels = {
-                            "add": "🟢 ひも追加",
-                            "delete": "🗑️ ひも削除（削除前を青点線）",
-                            "reconnect": "🔄 つなぎ直し",
-                            "initial": "初期ひも"
-                        }
-                        label = action_labels.get(act, "ひも追加")
-                        st.caption(
-                            f"案 {idx + 1}：{label}（計 {current_count}本）"
-                        )
-
-                if st.button(
-                    f"案 {idx + 1} を選択",
-                    key=f"select_{st.session_state.choice_step}_{idx}",
-                    use_container_width=True
-                ):
-                    st.session_state.selected_structure = deep_copy_structure(candidate)
-                    st.session_state.generated_image_bytes = None
-                    st.session_state.ai_input_image_bytes = None
-
-                    if st.session_state.choice_step >= ADDITION_ROUNDS:
-                        st.session_state.app_phase = "final"
-                    else:
-                        st.session_state.choice_step += 1
-                        st.session_state.need_generate_next = True
-
-                    st.rerun()
+        render_candidate_grid(candidates)
 
     st.markdown("---")
-    if st.button("最初からやり直す", use_container_width=True):
+
+    if st.button(
+        "最初からやり直す",
+        use_container_width=True
+    ):
         reset_app()
 
 
