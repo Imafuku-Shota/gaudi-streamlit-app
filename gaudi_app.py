@@ -32,6 +32,22 @@ st.markdown(
 # まずは0.70を基準に、0.05刻み程度で調整する。
 CONTROL_STRENGTH = 0.40
 
+# 1段階目で使う内部プロンプト。
+# 骨格線をそのまま見せず、まずは閉じた建物の塊として生成する。
+FIRST_STAGE_PROMPT = """Transform the input skeleton into one continuous, enclosed architectural mass.
+
+Use the input image only to define the overall building envelope, height distribution, curvature, and volume.
+
+Do not interpret any input curve as a visible arch, rib, bridge, frame, or exposed structural element.
+Absorb every input curve completely into thick enclosed walls, solid roofs, vaulted interior volumes, and continuous masonry surfaces.
+
+The result must be a complete habitable building with a closed exterior envelope.
+No freestanding arches, no overhead ribs, no exposed skeletal curves, no towers, no spires, and no detached structures.
+
+Use a simple neutral background.
+Minimal architectural detail.
+Focus on solid massing, enclosed surfaces, and structural volume."""
+
 # 天井に並べる固定点の数。増やすと接続候補となる天井点が増える。
 NUM_ANCHORS = 12
 
@@ -1340,6 +1356,7 @@ if "app_phase" not in st.session_state:
     st.session_state.selected_structure = None
     st.session_state.candidates = []
     st.session_state.generated_image_bytes = None
+    st.session_state.stage1_image_bytes = None
     st.session_state.ai_input_image_bytes = None
     st.session_state.need_generate_next = False
     generate_initial_candidates()
@@ -1434,6 +1451,7 @@ if st.session_state.app_phase == "choice":
                                 candidate
                             )
                             st.session_state.generated_image_bytes = None
+                            st.session_state.stage1_image_bytes = None
                             st.session_state.ai_input_image_bytes = None
 
                             if st.session_state.choice_step >= ADDITION_ROUNDS:
@@ -1623,12 +1641,21 @@ elif st.session_state.app_phase == "generate":
 
         if st.session_state.generated_image_bytes is None:
             with st.spinner("AIがレンダリングしています..."):
-                st.session_state.generated_image_bytes = generate_castle_image(
-                    st.session_state.ai_input_image_bytes,
-                    user_prompt,
-                    api_provider,
-                    selected_api_key
-                )
+                if st.session_state.stage1_image_bytes is None:
+                    st.session_state.stage1_image_bytes = generate_castle_image(
+                        st.session_state.ai_input_image_bytes,
+                        FIRST_STAGE_PROMPT,
+                        api_provider,
+                        selected_api_key
+                    )
+
+                if st.session_state.stage1_image_bytes is not None:
+                    st.session_state.generated_image_bytes = generate_castle_image(
+                        st.session_state.stage1_image_bytes,
+                        user_prompt,
+                        api_provider,
+                        selected_api_key
+                    )
 
         if st.session_state.generated_image_bytes:
             result_inner_cols = st.columns([0.10, 0.80, 0.10])
@@ -1646,6 +1673,7 @@ elif st.session_state.app_phase == "generate":
     with col1:
         if st.button("別プロンプト・別APIで再生成", use_container_width=True):
             st.session_state.generated_image_bytes = None
+            st.session_state.stage1_image_bytes = None
             st.rerun()
 
     with col2:
