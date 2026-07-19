@@ -28,44 +28,9 @@ st.markdown(
 # 設定値
 # ============================================================
 # Stability AI Control Structureの骨格追従強度。
-# 0.0に近いほどAIの自由度が高く、1.0に近いほど入力画像へ強く従う。
-FIRST_STAGE_CONTROL_STRENGTH = 0.40
-SECOND_STAGE_CONTROL_STRENGTH = 0.25
-
-# 1段階目で使う内部プロンプト。
-# 骨格線をそのまま見せず、まずは閉じた建物の塊として生成する。
-FIRST_STAGE_PROMPT = """Transform the input skeleton into one continuous, enclosed architectural mass.
-
-Use the input image only to define the overall building envelope, height distribution, curvature, and volume.
-Do not interpret any input curve as a visible arch, rib, bridge, frame, or exposed structural element.
-
-Absorb every input curve completely into thick enclosed walls, solid roofs, vaulted interior volumes, and continuous masonry surfaces.
-No input curve may remain visible as a separate line-like architectural element.
-
-Create a complete habitable building with a closed exterior envelope.
-The outermost curves define the boundary of the building volume, not exposed arches above the building.
-
-Keep the structure compact and fully contained within the input composition.
-Do not add towers, spires, bridges, wings, or detached side structures.
-
-Use a simple neutral background.
-Minimal architectural detail.
-Focus on solid massing, enclosed surfaces, and structural volume."""
-
-FIRST_STAGE_NEGATIVE_PROMPT = (
-    "exposed arch, giant arch, overhead arch, freestanding arch, "
-    "skeletal curve, structural rib, thin rib, wireframe, open frame, "
-    "bridge-like curve, visible guide line, outline arc, unfinished construction, "
-    "scaffolding, exposed framework, extra tower, extra spire, detached structure, "
-    "side extension, decorative line"
-)
-
-SECOND_STAGE_NEGATIVE_PROMPT = (
-    "exposed arch, overhead rib, freestanding frame, skeletal structure, "
-    "open framework, visible guide line, detached tower, detached spire, "
-    "extra bridge, side extension, changed silhouette, scaffolding, "
-    "unfinished building, wireframe"
-)
+# 0.0に近いほどAIの自由度が高く、1.0に近いほど入力骨格へ強く従う。
+# まずは0.70を基準に、0.05刻み程度で調整する。
+CONTROL_STRENGTH = 0.40
 
 # 天井に並べる固定点の数。増やすと接続候補となる天井点が増える。
 NUM_ANCHORS = 12
@@ -187,18 +152,17 @@ st.sidebar.markdown("---")
 
 user_prompt = st.sidebar.text_area(
     "生成プロンプト",
-    value="""Preserve the existing building mass, silhouette, roofline, proportions, and enclosed exterior exactly as shown in the input image.
+    value="""Transform this structural skeleton into a completed Gaudi-inspired fantasy castle integrated into a dramatic landscape.
 
-Transform the building into a completed Gaudi-inspired fantasy castle.
-Refine the architecture with sculptural stone facades, organic windows, integrated masonry ornament, elegant entrances, layered balconies, subtle towers only within the existing building volume, and highly detailed architectural surfaces.
+Use the input image only as a loose structural guide for the main silhouette, arches, and tower rhythm. Do not reproduce the guide lines themselves.
 
-Do not change the overall structure.
-Do not add freestanding arches, overhead ribs, bridges, detached towers, side wings, or architectural extensions outside the existing building mass.
+Show the structure from a dynamic architectural viewpoint.
 
-Show the building from a dynamic architectural viewpoint with realistic depth and perspective.
-Add a believable but controlled setting with stone ground, paths, limited vegetation, distant mountains, and atmospheric sky.
+The castle should be part of a larger architectural scene with stone terraces, stairways, bridges, courtyards, trees, mountains, and atmospheric sky.
 
-Organic Gaudi-inspired architecture, sculptural stone facade, realistic architectural concept art, cinematic lighting, detailed masonry texture, highly detailed.""",
+The structure should feel like a real inhabited building, not an isolated model. Add depth, perspective, shadows, surrounding ground, paths, small human figures, vegetation, and environmental context.
+
+Organic Gaudi-inspired architecture, sculptural stone facade, flowing arches, spires, detailed windows, masonry texture, realistic architectural concept art, cinematic lighting, highly detailed.""",
     height=300
 )
 
@@ -1001,7 +965,7 @@ def make_dummy_image():
     return buf.getvalue()
 
 
-def generate_stability_image(image_bytes, prompt, key, control_strength, negative_prompt):
+def generate_stability_image(image_bytes, prompt, key):
     """Stability AI Control Structureで、骨組みを構造ガイドとして画像生成する。"""
     if not key:
         st.warning("⚠️ STABILITY_API_KEY が設定されていないため、ダミー画像を表示しています。")
@@ -1023,9 +987,12 @@ def generate_stability_image(image_bytes, prompt, key, control_strength, negativ
             },
             data={
                 "prompt": prompt,
-                "control_strength": str(control_strength),
+                "control_strength": str(CONTROL_STRENGTH),
                 "output_format": "png",
-                "negative_prompt": negative_prompt
+                "negative_prompt": (
+                    "black guide lines, dots, graph marks, wireframe, blueprint, "
+                    "simple line drawing, unfinished sketch, low detail, text, watermark"
+                )
             },
             timeout=120
         )
@@ -1100,12 +1067,10 @@ def generate_openai_image(image_bytes, prompt, key):
         return None
 
 
-def generate_castle_image(image_bytes, prompt, provider, key, control_strength, negative_prompt):
+def generate_castle_image(image_bytes, prompt, provider, key):
     """選択されたAPIで画像生成する。"""
     if provider == "Stability AI":
-        return generate_stability_image(
-            image_bytes, prompt, key, control_strength, negative_prompt
-        )
+        return generate_stability_image(image_bytes, prompt, key)
 
     if provider == "OpenAI":
         return generate_openai_image(image_bytes, prompt, key)
@@ -1375,7 +1340,6 @@ if "app_phase" not in st.session_state:
     st.session_state.selected_structure = None
     st.session_state.candidates = []
     st.session_state.generated_image_bytes = None
-    st.session_state.stage1_image_bytes = None
     st.session_state.ai_input_image_bytes = None
     st.session_state.need_generate_next = False
     generate_initial_candidates()
@@ -1470,7 +1434,6 @@ if st.session_state.app_phase == "choice":
                                 candidate
                             )
                             st.session_state.generated_image_bytes = None
-                            st.session_state.stage1_image_bytes = None
                             st.session_state.ai_input_image_bytes = None
 
                             if st.session_state.choice_step >= ADDITION_ROUNDS:
@@ -1660,25 +1623,12 @@ elif st.session_state.app_phase == "generate":
 
         if st.session_state.generated_image_bytes is None:
             with st.spinner("AIがレンダリングしています..."):
-                if st.session_state.stage1_image_bytes is None:
-                    st.session_state.stage1_image_bytes = generate_castle_image(
-                        st.session_state.ai_input_image_bytes,
-                        FIRST_STAGE_PROMPT,
-                        api_provider,
-                        selected_api_key,
-                        FIRST_STAGE_CONTROL_STRENGTH,
-                        FIRST_STAGE_NEGATIVE_PROMPT
-                    )
-
-                if st.session_state.stage1_image_bytes is not None:
-                    st.session_state.generated_image_bytes = generate_castle_image(
-                        st.session_state.stage1_image_bytes,
-                        user_prompt,
-                        api_provider,
-                        selected_api_key,
-                        SECOND_STAGE_CONTROL_STRENGTH,
-                        SECOND_STAGE_NEGATIVE_PROMPT
-                    )
+                st.session_state.generated_image_bytes = generate_castle_image(
+                    st.session_state.ai_input_image_bytes,
+                    user_prompt,
+                    api_provider,
+                    selected_api_key
+                )
 
         if st.session_state.generated_image_bytes:
             result_inner_cols = st.columns([0.10, 0.80, 0.10])
@@ -1696,7 +1646,6 @@ elif st.session_state.app_phase == "generate":
     with col1:
         if st.button("別プロンプト・別APIで再生成", use_container_width=True):
             st.session_state.generated_image_bytes = None
-            st.session_state.stage1_image_bytes = None
             st.rerun()
 
     with col2:
