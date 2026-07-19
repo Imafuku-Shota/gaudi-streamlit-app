@@ -27,6 +27,11 @@ st.markdown(
 # ============================================================
 # 設定値
 # ============================================================
+# Stability AI Control Structureの骨格追従強度。
+# 0.0に近いほどAIの自由度が高く、1.0に近いほど入力骨格へ強く従う。
+# まずは0.70を基準に、0.05刻み程度で調整する。
+CONTROL_STRENGTH = 0.70
+
 # 天井に並べる固定点の数。増やすと接続候補となる天井点が増える。
 NUM_ANCHORS = 12
 
@@ -982,7 +987,7 @@ def generate_stability_image(image_bytes, prompt, key):
             },
             data={
                 "prompt": prompt,
-                "control_strength": "0.45",
+                "control_strength": str(CONTROL_STRENGTH),
                 "output_format": "png",
                 "negative_prompt": (
                     "black guide lines, dots, graph marks, wireframe, blueprint, "
