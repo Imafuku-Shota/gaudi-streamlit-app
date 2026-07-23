@@ -152,17 +152,51 @@ st.sidebar.markdown("---")
 
 user_prompt = st.sidebar.text_area(
     "生成プロンプト",
-    value="""Transform this structural skeleton into a completed Gaudi-inspired fantasy castle integrated into a dramatic landscape.
+    value="""Transform the input skeleton into a coherent Gaudi-inspired fantasy castle composition.
 
-Use the input image only as a loose structural guide for the main silhouette, arches, and tower rhythm. Do not reproduce the guide lines themselves.
+Treat the skeleton as an abstract guide for the arrangement of architectural masses, not as literal lines and not merely as a loose outer silhouette.
 
-Show the structure from a dynamic architectural viewpoint.
+First interpret the skeleton as a small number of dominant composition anchors:
+major high regions, broad regions, narrow regions, low regions, valleys, separations, and empty spaces.
 
-The castle should be part of a larger architectural scene with stone terraces, stairways, bridges, courtyards, trees, mountains, and atmospheric sky.
+Preserve the left-to-right order, approximate horizontal position, relative height, relative width, and separation of these dominant regions in the final image.
+Major peaks, valleys, and gaps should remain recognizable in approximately the same positions when the completed architecture is viewed from a distance.
 
-The structure should feel like a real inhabited building, not an isolated model. Add depth, perspective, shadows, surrounding ground, paths, small human figures, vegetation, and environmental context.
+After identifying these dominant composition anchors, do not trace the individual curve paths.
+No wall, roof, arch, window, facade edge, bridge, or decorative structure should directly follow an input line.
 
-Organic Gaudi-inspired architecture, sculptural stone facade, flowing arches, spires, detailed windows, masonry texture, realistic architectural concept art, cinematic lighting, highly detailed.""",
+At a small thumbnail size, or when the image is slightly blurred, the distribution of the castle’s main building masses should resemble the input composition.
+However, no individual skeleton curve should be identifiable in the finished architecture.
+
+Use a varied architectural interpretation for the dominant regions.
+Broad and high regions may become great halls, steep roof volumes, fortified main buildings, clustered stone masses, or layered roof groups.
+Narrow and high regions may become fortified towers, conical turrets, steep-roofed volumes, bell-tower-like forms, or vertically oriented halls, but not every high point should become a tower.
+Low and wide regions may become wings, entrance buildings, terraces, secondary halls, or lower fortified masses.
+Overlapping parts of the skeleton may be represented by separate architectural volumes positioned at different depths.
+
+The design may contain multiple connected or visually related building volumes.
+They do not need to merge into one continuous outer shell.
+Do not fill every area beneath the input curves with walls or buildings.
+
+Preserve major empty intervals and valleys as visible sky gaps, setbacks, courtyards, changes in depth, or separations between building masses.
+Do not eliminate distinctive gaps by filling the entire silhouette with one generic castle mass.
+
+The skeleton itself must never remain visible.
+No exposed ribs, giant freestanding arches, skeletal outlines, wireframe structures, line-like frames, or curves extending into the sky.
+Do not turn a large curve into one giant arch-shaped wall or exposed outer frame.
+
+Use a balanced mixture of great halls, secondary wings, steep pitched roofs, conical turrets, fortified towers, keeps, buttressed stone masses, arcades, crenellated parapets, and recessed masses.
+Use rounded roofs or domes only sparingly, as minor accents rather than dominant forms.
+Avoid tower-only compositions, repeated domes, repeated shell-shaped facades, and literal curve-to-wall conversion.
+
+Show the entire composition from a slight three-quarter view, approximately 15 to 20 degrees from the front.
+Use a moderate viewing distance and minimal perspective distortion.
+Keep all major building masses visible and preserve their projected left-to-right arrangement.
+Do not use a dramatic angle, close-up view, or strongly distorted perspective.
+
+Keep the environment restrained and secondary, with simple terrain, limited vegetation, distant mountains, and a subtle atmospheric sky.
+
+Gaudi-inspired detailing applied to a Western European medieval castle, Gothic and Romanesque influences, varied but coherent castle massing, sculptural stone facade, elegant towers, steep slate roofs, pointed Gothic windows, crenellated parapets, fortified stone architecture, realistic windows and entrances, masonry texture, believable architectural design, cinematic lighting, highly detailed architectural concept art.""",
     height=300
 )
 
