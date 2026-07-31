@@ -159,14 +159,15 @@ Treat the skeleton as an abstract structural composition guide, not as literal l
 First interpret the skeleton as a small number of connected structural systems and dominant composition anchors:
 major high regions, broad regions, narrow regions, low regions, valleys, separations, overlaps, and nested inner curves.
 
-Use the left-to-right order, approximate height distribution, and major structural relationships of these dominant regions as guidance, but prioritize architectural plausibility and coherent construction over exact silhouette matching.
-Major peaks, valleys, and some important overlaps may be simplified, merged, or regularized if necessary to create a believable real building.
+Use the left-to-right order, approximate horizontal position, relative height, relative width, and major structural relationships of these dominant regions as firm composition constraints.
+Prioritize architectural plausibility, but do not discard or relocate the dominant high arch, the distinct narrow vertical region, or the lower nested and overlapping curves.
+Simplification is allowed only when the same major spatial hierarchy remains clearly recognizable.
 
 Do not trace the individual curve paths literally with thin walls, exposed ribs, or line-like structures.
 However, preserve the structural relationships suggested by the skeleton in a simplified architectural way.
 Nested and overlapping curves may influence the arrangement of connected architectural masses, attached chapels, side halls, secondary wings, vaulted substructures, buttressed roofs, and layered building volumes.
 
-At a small thumbnail size, the distribution of the main masses should still loosely resemble the input composition.
+At a small thumbnail size, the distribution of the main masses must clearly resemble the input composition, including both the outer high region and the lower nested curve groups.
 However, no individual skeleton curve should remain directly visible in the finished architecture.
 
 The architecture should not be only an outer silhouette with arbitrary interior filling.
@@ -184,7 +185,8 @@ The design may contain multiple connected or visually related building volumes.
 They do not need to merge into one smooth outer shell, but they should clearly connect and read as one believable architectural complex.
 Do not fill every area beneath the input curves with walls or buildings, and do not overemphasize every overlap.
 
-Preserve some major empty intervals and valleys as setbacks, courtyards, depth changes, or separations between building masses, but allow these spaces to be regularized where needed for realism.
+Preserve the major empty intervals and valleys as setbacks, courtyards, depth changes, or separations between building masses.
+Do not erase them by replacing the skeleton with a generic symmetrical cathedral, monastery, palace, or fortress template.
 
 The skeleton itself must never remain visible.
 No exposed ribs, giant freestanding arches, skeletal outlines, wireframe structures, line-like frames, or curves extending into the sky.
@@ -229,12 +231,6 @@ STYLE_PRESETS = {
     },
     "ラージプート宮殿要塞系": {
         "prompt": "Use a Rajput palace-fortress language: layered palace masses, chhatris, jharokhas, pavilions, terraces, fortified walls, stepped profiles, and palace-citadel logic with rich but believable stone detailing."
-    },
-    "地中海修道院 / 要塞系": {
-        "prompt": "Use a Mediterranean monastery-fortress language: thick masonry walls, cloister-like courts, bell towers or campaniles used selectively, tiled or stone roofs, restrained ornament, and believable hilltop-fortress massing."
-    },
-    "おとぎ話風ヨーロッパ城郭": {
-        "prompt": "Use a Central or Eastern European fairy-tale castle language: steep roofs, tall but selective towers, layered keeps, romantic castle silhouettes, and believable stone-and-roof construction with a more whimsical yet still plausible character."
     }
 }
 
@@ -273,9 +269,7 @@ STYLE_MATERIAL_COMPATIBILITY = {
     "ムガル / タージマハル系": ["白大理石", "赤砂岩＋白大理石", "温かい砂岩"],
     "モリッシュ / アンダルシア系": ["漆喰＋石材", "彩色タイル＋石材", "温かい砂岩", "レンガ＋石材"],
     "ビザンティン / 東地中海系": ["レンガ＋石材", "彩色タイル＋石材", "石灰岩", "漆喰＋石材"],
-    "ラージプート宮殿要塞系": ["温かい砂岩", "白大理石", "赤砂岩＋白大理石", "石灰岩"],
-    "地中海修道院 / 要塞系": ["石灰岩", "漆喰＋石材", "レンガ＋石材", "温かい砂岩"],
-    "おとぎ話風ヨーロッパ城郭": ["石灰岩", "花崗岩", "レンガ＋石材", "彩色タイル＋石材", "温かい砂岩"]
+    "ラージプート宮殿要塞系": ["温かい砂岩", "白大理石", "赤砂岩＋白大理石", "石灰岩"]
 }
 
 st.sidebar.markdown("#### バリエーション設定")
@@ -403,6 +397,17 @@ def build_effective_generation_prompt(base_prompt, style_selection, material_sel
         "Allow moderate variation within the chosen style: slightly different stone tones, "
         "finishes, trim, accents, or secondary materials are welcome, but keep the overall "
         "result realistic, plausible, and stylistically coherent."
+    )
+
+    sections.append(
+        "STRUCTURE PRIORITY: The selected architectural style must adapt to the input skeleton; "
+        "it must not replace the skeleton with a conventional stock building of that style. "
+        "Preserve the dominant outer high arch, the distinct narrow vertical region, the lower "
+        "nested arches, their left-to-right positions, relative heights, widths, and important "
+        "overlaps. Translate these regions into believable connected building masses, roofs, "
+        "vaults, halls, towers, pavilions, or domed volumes appropriate to the selected style. "
+        "Do not ignore the lower curve groups, do not collapse them into generic low wings, and "
+        "do not impose a standard symmetrical cathedral, monastery, palace, or fortress layout."
     )
 
     final_prompt = "\n\n".join(sections)
