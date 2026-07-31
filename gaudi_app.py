@@ -150,24 +150,21 @@ else:
 
 st.sidebar.markdown("---")
 
-user_prompt = st.sidebar.text_area(
-    "生成プロンプト",
-    value="""Transform the input skeleton into a coherent monumental architectural composition.
+OPENAI_DEFAULT_PROMPT = """Transform the input skeleton into a coherent Gaudi-inspired monumental cathedral-castle composition.
 
 Treat the skeleton as an abstract structural composition guide, not as literal lines and not merely as a loose outer silhouette.
 
 First interpret the skeleton as a small number of connected structural systems and dominant composition anchors:
 major high regions, broad regions, narrow regions, low regions, valleys, separations, overlaps, and nested inner curves.
 
-Use the left-to-right order, approximate horizontal position, relative height, relative width, and major structural relationships of these dominant regions as firm composition constraints.
-Prioritize architectural plausibility, but do not discard or relocate the dominant high arch, the distinct narrow vertical region, or the lower nested and overlapping curves.
-Simplification is allowed only when the same major spatial hierarchy remains clearly recognizable.
+Use the left-to-right order, approximate height distribution, and major structural relationships of these dominant regions as guidance, but prioritize architectural plausibility and coherent construction over exact silhouette matching.
+Major peaks, valleys, and some important overlaps may be simplified, merged, or regularized if necessary to create a believable real building.
 
 Do not trace the individual curve paths literally with thin walls, exposed ribs, or line-like structures.
 However, preserve the structural relationships suggested by the skeleton in a simplified architectural way.
 Nested and overlapping curves may influence the arrangement of connected architectural masses, attached chapels, side halls, secondary wings, vaulted substructures, buttressed roofs, and layered building volumes.
 
-At a small thumbnail size, the distribution of the main masses must clearly resemble the input composition, including both the outer high region and the lower nested curve groups.
+At a small thumbnail size, the distribution of the main masses should still loosely resemble the input composition.
 However, no individual skeleton curve should remain directly visible in the finished architecture.
 
 The architecture should not be only an outer silhouette with arbitrary interior filling.
@@ -185,18 +182,17 @@ The design may contain multiple connected or visually related building volumes.
 They do not need to merge into one smooth outer shell, but they should clearly connect and read as one believable architectural complex.
 Do not fill every area beneath the input curves with walls or buildings, and do not overemphasize every overlap.
 
-Preserve the major empty intervals and valleys as setbacks, courtyards, depth changes, or separations between building masses.
-Do not erase them by replacing the skeleton with a generic symmetrical cathedral, monastery, palace, or fortress template.
+Preserve some major empty intervals and valleys as setbacks, courtyards, depth changes, or separations between building masses, but allow these spaces to be regularized where needed for realism.
 
 The skeleton itself must never remain visible.
 No exposed ribs, giant freestanding arches, skeletal outlines, wireframe structures, line-like frames, or curves extending into the sky.
 Do not turn a large curve into one giant arch-shaped wall or exposed outer frame.
 
-Use a balanced mixture of great halls, secondary wings, vaulted roofs, keeps, buttressed stone masses, arcades, recessed masses, and selectively rounded forms.
+Use a balanced mixture of great halls, secondary wings, vaulted roofs, keeps, buttressed stone masses, arcades, crenellated parapets, recessed masses, and selectively rounded forms.
 Use slender towers or spires only selectively, and only where clearly justified by the input skeleton.
 Use rounded, catenary-like, and parabolic forms selectively and structurally, mainly where they improve realism and architectural logic, not merely to reproduce the skeleton’s curves.
 
-The final architecture should look like a plausible monumental architectural complex that could realistically be designed and built — for example a castle, palace, cathedral-like complex, abbey-like complex, citadel, mausoleum-like complex, or another monumental structure — rather than an abstract fantasy mass shaped only by the input silhouette.
+The final architecture should look like a plausible monumental cathedral-castle or abbey-like stone complex that could realistically be designed and built, rather than an abstract fantasy mass shaped only by the input silhouette.
 Favor believable load-bearing organization, clear hierarchy of masses, realistic roof transitions, sensible buttressing, and structurally plausible connections between volumes.
 Avoid top-heavy compositions, arbitrary stacked forms, excessive silhouette matching, improbable accumulations of rounded masses, tower-only compositions, repeated domes, repeated shell-shaped facades, and literal curve-to-wall conversion.
 
@@ -207,8 +203,34 @@ Do not use a dramatic angle, close-up view, or strongly distorted perspective.
 
 Keep the environment restrained and secondary, with simple terrain, limited vegetation, distant mountains, and a subtle atmospheric sky.
 
-Architecturally expressive monumental design, coherent regional character, believable and realistic construction, sculptural facade, realistic windows and entrances, carefully detailed materials, cinematic lighting, highly detailed architectural concept art.""",
-    height=300
+Gaudi-inspired detailing applied to a Western European monumental cathedral-castle or abbey-like complex, Gothic and Romanesque influences, funicular and catenary-inspired structural massing, believable and realistic stone architecture, sculptural stone facade, elegant towers only where structurally justified, vaulted roofs, steep slate roofs where appropriate, pointed Gothic windows, crenellated parapets, fortified stone architecture, realistic windows and entrances, masonry texture, cinematic lighting, highly detailed architectural concept art."""
+
+STABILITY_DEFAULT_PROMPT = """A massive, asymmetrical Sagrada Familia stone cathedral perfectly matching the exact uneven shape and outer silhouette of the input lines.
+
+CRITICAL INSTRUCTION: The input lines are the ABSOLUTE LAW. The building's shape MUST strictly follow the input skeleton. Generate EXACTLY ONE tower per input curve. Do NOT add any extra towers, background spires, or symmetrical shapes. The architecture must remain physically stable and upright, strictly mirroring the input outline without twisting.
+
+Real outdoor architectural photography. Towering asymmetrical perforated spires with crosses, heavy intricately carved sandstone walls, organic Gaudi reliefs.
+
+Built on a vast outdoor plaza with tiny green pine trees at the bottom to show colossal scale. In the foreground, a serene reflecting pool of water.
+
+Clear vibrant blue sky, warm golden-hour sunlight, deep shadows.
+
+Hyper-realistic, highly detailed, real world massive architecture, strictly asymmetrical."""
+
+if api_provider == "OpenAI":
+    default_prompt = OPENAI_DEFAULT_PROMPT
+    prompt_label = "生成プロンプト（OpenAI用）"
+    prompt_key = "openai_generation_prompt"
+else:
+    default_prompt = STABILITY_DEFAULT_PROMPT
+    prompt_label = "生成プロンプト（Stability AI用）"
+    prompt_key = "stability_generation_prompt"
+
+user_prompt = st.sidebar.text_area(
+    prompt_label,
+    value=default_prompt,
+    height=300,
+    key=prompt_key
 )
 
 # ============================================================
