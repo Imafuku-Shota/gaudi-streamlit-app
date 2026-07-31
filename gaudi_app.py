@@ -205,17 +205,47 @@ Keep the environment restrained and secondary, with simple terrain, limited vege
 
 Gaudi-inspired detailing applied to a Western European monumental cathedral-castle or abbey-like complex, Gothic and Romanesque influences, funicular and catenary-inspired structural massing, believable and realistic stone architecture, sculptural stone facade, elegant towers only where structurally justified, vaulted roofs, steep slate roofs where appropriate, pointed Gothic windows, crenellated parapets, fortified stone architecture, realistic windows and entrances, masonry texture, cinematic lighting, highly detailed architectural concept art."""
 
-STABILITY_DEFAULT_PROMPT = """A massive, asymmetrical Sagrada Familia stone cathedral perfectly matching the exact uneven shape and outer silhouette of the input lines.
+STABILITY_DEFAULT_PROMPT = """Transform the input skeleton into a massive, asymmetrical Gaudi-inspired monumental cathedral.
 
-CRITICAL INSTRUCTION: The input lines are the ABSOLUTE LAW. The building's shape MUST strictly follow the input skeleton. Generate EXACTLY ONE tower per input curve. Do NOT add any extra towers, background spires, or symmetrical shapes. The architecture must remain physically stable and upright, strictly mirroring the input outline without twisting.
+Use the input skeleton as a firm composition guide for the arrangement of the building’s main masses, but do not reproduce the curves as visible structural lines.
 
-Real outdoor architectural photography. Towering asymmetrical perforated spires with crosses, heavy intricately carved sandstone walls, organic Gaudi reliefs.
+Preserve the following features of the input:
+the left-to-right order of the major regions,
+the approximate position and relative height of the main peaks,
+the narrow vertical regions,
+the major valleys and separations,
+and the lower overlapping curve groups.
 
-Built on a vast outdoor plaza with tiny green pine trees at the bottom to show colossal scale. In the foreground, a serene reflecting pool of water.
+The completed building should clearly reflect this uneven composition when viewed from a distance.
+However, do not strictly trace the exact path of every curve and do not convert every curve into a separate tower or exposed arch.
 
-Clear vibrant blue sky, warm golden-hour sunlight, deep shadows.
+Interpret the skeleton as a small number of connected architectural volumes.
+The highest and broadest regions may become major cathedral masses, tall naves, large roofed volumes, or dominant tower groups.
+Clearly tall and narrow regions may become slender towers or spires.
+Lower and overlapping curves should become attached chapels, side halls, lower roofed wings, entrance volumes, or layered subsidiary buildings.
+They must not be ignored or replaced by generic symmetrical wings.
 
-Hyper-realistic, highly detailed, real world massive architecture, strictly asymmetrical."""
+Do not add towers, spires, or large building masses in positions that are not supported by the input composition.
+Do not impose a conventional symmetrical cathedral layout.
+Do not create the same number of towers on both sides merely for visual balance.
+
+The skeleton itself must completely disappear inside the finished architecture.
+No exposed guide lines, freestanding arches, giant curve-shaped frames, flying external ribs, wireframe structures, skeletal facades, or open exoskeletons.
+If a curve cannot be translated naturally into a believable exterior volume, absorb it into the roof mass, wall thickness, internal structure, or depth arrangement instead of showing it externally.
+
+Create a complete enclosed exterior building with solid masonry walls, enclosed roofs, realistic windows, entrances, attached building volumes, and structurally plausible connections.
+The result must look like a real full-scale monumental building, not an architectural model, miniature, studio display, interior view, cutaway, or unfinished structure.
+
+The architecture may be inspired by the monumental organic character of the Sagrada Familia, but it must not copy its standard symmetrical tower arrangement or recognizable existing facade.
+Use the reference only for the sense of scale, sculptural masonry, organic detailing, vertical emphasis, and realistic completed-building appearance.
+
+Show the entire building from a slight three-quarter exterior view at a moderate distance.
+Keep the major left-to-right arrangement visible with minimal perspective distortion.
+
+Real outdoor architectural photography.
+A restrained plaza and landscape, a few small trees and distant human figures for scale, natural sky, warm sunlight, believable shadows.
+
+Monumental Gaudi-inspired architecture, asymmetrical but coherent massing, sculptural carved stone, enclosed architectural volumes, towers only where justified by the input, realistic full-scale construction, highly detailed, photorealistic."""
 
 if api_provider == "OpenAI":
     default_prompt = OPENAI_DEFAULT_PROMPT
