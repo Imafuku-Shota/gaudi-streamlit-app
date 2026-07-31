@@ -152,42 +152,51 @@ st.sidebar.markdown("---")
 
 user_prompt = st.sidebar.text_area(
     "生成プロンプト",
-    value="""Transform the input skeleton into a coherent Gaudi-inspired fantasy castle composition.
+    value="""Transform the input skeleton into a coherent monumental architectural composition.
 
-Treat the skeleton as an abstract guide for the arrangement of architectural masses, not as literal lines and not merely as a loose outer silhouette.
+Treat the skeleton as an abstract structural composition guide, not as literal lines and not merely as a loose outer silhouette.
 
-First interpret the skeleton as a small number of dominant composition anchors:
-major high regions, broad regions, narrow regions, low regions, valleys, separations, and empty spaces.
+First interpret the skeleton as a small number of connected structural systems and dominant composition anchors:
+major high regions, broad regions, narrow regions, low regions, valleys, separations, overlaps, and nested inner curves.
 
-Preserve the left-to-right order, approximate horizontal position, relative height, relative width, and separation of these dominant regions in the final image.
-Major peaks, valleys, and gaps should remain recognizable in approximately the same positions when the completed architecture is viewed from a distance.
+Use the left-to-right order, approximate height distribution, and major structural relationships of these dominant regions as guidance, but prioritize architectural plausibility and coherent construction over exact silhouette matching.
+Major peaks, valleys, and some important overlaps may be simplified, merged, or regularized if necessary to create a believable real building.
 
-After identifying these dominant composition anchors, do not trace the individual curve paths.
-No wall, roof, arch, window, facade edge, bridge, or decorative structure should directly follow an input line.
+Do not trace the individual curve paths literally with thin walls, exposed ribs, or line-like structures.
+However, preserve the structural relationships suggested by the skeleton in a simplified architectural way.
+Nested and overlapping curves may influence the arrangement of connected architectural masses, attached chapels, side halls, secondary wings, vaulted substructures, buttressed roofs, and layered building volumes.
 
-At a small thumbnail size, or when the image is slightly blurred, the distribution of the castle’s main building masses should resemble the input composition.
-However, no individual skeleton curve should be identifiable in the finished architecture.
+At a small thumbnail size, the distribution of the main masses should still loosely resemble the input composition.
+However, no individual skeleton curve should remain directly visible in the finished architecture.
+
+The architecture should not be only an outer silhouette with arbitrary interior filling.
+Instead, the major curve families should be reinterpreted as a small number of structurally plausible building masses or subsystems that connect naturally into one coherent architectural complex, without forcing every curve relationship into a direct visible form.
 
 Use a varied architectural interpretation for the dominant regions.
-Broad and high regions may become great halls, steep roof volumes, fortified main buildings, clustered stone masses, or layered roof groups.
-Narrow and high regions may become fortified towers, conical turrets, steep-roofed volumes, bell-tower-like forms, or vertically oriented halls, but not every high point should become a tower.
-Low and wide regions may become wings, entrance buildings, terraces, secondary halls, or lower fortified masses.
-Overlapping parts of the skeleton may be represented by separate architectural volumes positioned at different depths.
+Broad and high regions may become great halls, vaulted main naves, fortified main buildings, clustered stone masses, or layered roof groups.
+Narrow and high regions may become slender towers, spires, steep-roofed volumes, or vertically oriented halls only when clearly supported by a distinct tall and narrow region in the input skeleton.
+Do not add decorative peripheral towers, corner turrets, or extra slender spires in unsupported positions.
+Not every high point should become a tower.
+Low and wide regions may become wings, entrance buildings, terraces, secondary halls, lower fortified masses, or attached vaulted volumes.
+Small lower curve regions should not become clusters of tiny decorative domes or miniature roofs, but should be interpreted as one or two coherent attached substructures.
 
 The design may contain multiple connected or visually related building volumes.
-They do not need to merge into one continuous outer shell.
-Do not fill every area beneath the input curves with walls or buildings.
+They do not need to merge into one smooth outer shell, but they should clearly connect and read as one believable architectural complex.
+Do not fill every area beneath the input curves with walls or buildings, and do not overemphasize every overlap.
 
-Preserve major empty intervals and valleys as visible sky gaps, setbacks, courtyards, changes in depth, or separations between building masses.
-Do not eliminate distinctive gaps by filling the entire silhouette with one generic castle mass.
+Preserve some major empty intervals and valleys as setbacks, courtyards, depth changes, or separations between building masses, but allow these spaces to be regularized where needed for realism.
 
 The skeleton itself must never remain visible.
 No exposed ribs, giant freestanding arches, skeletal outlines, wireframe structures, line-like frames, or curves extending into the sky.
 Do not turn a large curve into one giant arch-shaped wall or exposed outer frame.
 
-Use a balanced mixture of great halls, secondary wings, steep pitched roofs, conical turrets, fortified towers, keeps, buttressed stone masses, arcades, crenellated parapets, and recessed masses.
-Use rounded roofs or domes only sparingly, as minor accents rather than dominant forms.
-Avoid tower-only compositions, repeated domes, repeated shell-shaped facades, and literal curve-to-wall conversion.
+Use a balanced mixture of great halls, secondary wings, vaulted roofs, keeps, buttressed stone masses, arcades, recessed masses, and selectively rounded forms.
+Use slender towers or spires only selectively, and only where clearly justified by the input skeleton.
+Use rounded, catenary-like, and parabolic forms selectively and structurally, mainly where they improve realism and architectural logic, not merely to reproduce the skeleton’s curves.
+
+The final architecture should look like a plausible monumental architectural complex that could realistically be designed and built — for example a castle, palace, cathedral-like complex, abbey-like complex, citadel, mausoleum-like complex, or another monumental structure — rather than an abstract fantasy mass shaped only by the input silhouette.
+Favor believable load-bearing organization, clear hierarchy of masses, realistic roof transitions, sensible buttressing, and structurally plausible connections between volumes.
+Avoid top-heavy compositions, arbitrary stacked forms, excessive silhouette matching, improbable accumulations of rounded masses, tower-only compositions, repeated domes, repeated shell-shaped facades, and literal curve-to-wall conversion.
 
 Show the entire composition from a slight three-quarter view, approximately 15 to 20 degrees from the front.
 Use a moderate viewing distance and minimal perspective distortion.
@@ -196,9 +205,213 @@ Do not use a dramatic angle, close-up view, or strongly distorted perspective.
 
 Keep the environment restrained and secondary, with simple terrain, limited vegetation, distant mountains, and a subtle atmospheric sky.
 
-Gaudi-inspired detailing applied to a Western European medieval castle, Gothic and Romanesque influences, varied but coherent castle massing, sculptural stone facade, elegant towers, steep slate roofs, pointed Gothic windows, crenellated parapets, fortified stone architecture, realistic windows and entrances, masonry texture, believable architectural design, cinematic lighting, highly detailed architectural concept art.""",
+Architecturally expressive monumental design, coherent regional character, believable and realistic construction, sculptural facade, realistic windows and entrances, carefully detailed materials, cinematic lighting, highly detailed architectural concept art.""",
     height=300
 )
+
+# ============================================================
+# スタイル / 素材のバリエーション設定
+# ============================================================
+STYLE_PRESETS = {
+    "ランダム（毎回）": None,
+    "固定しない（自由）": None,
+    "西洋ゴシック / ロマネスク": {
+        "prompt": "Use a Western European Gothic and Romanesque monumental language: fortified stone masses, pointed or round arches as appropriate, buttressing, steep roofs, towers used selectively, cathedral-like spatial hierarchy, and realistic medieval masonry logic."
+    },
+    "ムガル / タージマハル系": {
+        "prompt": "Use a Mughal monumental language: balanced monumental masses, iwans, chhatris, onion or bulbous domes where appropriate, arcaded galleries, refined symmetry or near-symmetry, elegant pavilions, and palace-mausoleum-like compositional logic inspired by Indo-Islamic architecture."
+    },
+    "モリッシュ / アンダルシア系": {
+        "prompt": "Use a Moorish-Andalusian palace-fortress language: horseshoe or lobed arches, arcaded courtyards, layered walls, towers used sparingly, ornamental geometric surfaces, garden-palace logic, and warm fortress-like massing."
+    },
+    "ビザンティン / 東地中海系": {
+        "prompt": "Use a Byzantine or Eastern Mediterranean monumental language: domed central masses, semi-domes, basilica-like volumes, brick-and-stone logic, layered apses, arcaded openings, and a coherent ecclesiastical-citadel character."
+    },
+    "ラージプート宮殿要塞系": {
+        "prompt": "Use a Rajput palace-fortress language: layered palace masses, chhatris, jharokhas, pavilions, terraces, fortified walls, stepped profiles, and palace-citadel logic with rich but believable stone detailing."
+    },
+    "地中海修道院 / 要塞系": {
+        "prompt": "Use a Mediterranean monastery-fortress language: thick masonry walls, cloister-like courts, bell towers or campaniles used selectively, tiled or stone roofs, restrained ornament, and believable hilltop-fortress massing."
+    },
+    "おとぎ話風ヨーロッパ城郭": {
+        "prompt": "Use a Central or Eastern European fairy-tale castle language: steep roofs, tall but selective towers, layered keeps, romantic castle silhouettes, and believable stone-and-roof construction with a more whimsical yet still plausible character."
+    }
+}
+
+MATERIAL_PRESETS = {
+    "ランダム（毎回）": None,
+    "固定しない（自由）": None,
+    "温かい砂岩": {
+        "prompt": "Primary material palette: warm carved sandstone with visible blocks, weathering, and sculptural surface detail."
+    },
+    "白大理石": {
+        "prompt": "Primary material palette: pale or white marble, with refined carving, polished highlights, and monumental stone surfaces."
+    },
+    "赤砂岩＋白大理石": {
+        "prompt": "Primary material palette: red sandstone with white marble accents or inlays, producing a rich two-tone monumental appearance."
+    },
+    "石灰岩": {
+        "prompt": "Primary material palette: pale limestone with realistic aging, carved detailing, and soft tonal variation."
+    },
+    "花崗岩": {
+        "prompt": "Primary material palette: light or medium granite with solid heavy texture, believable joints, and rugged monumental construction."
+    },
+    "レンガ＋石材": {
+        "prompt": "Primary material palette: brick masonry combined with carved stone trim, arches, and structural accents."
+    },
+    "漆喰＋石材": {
+        "prompt": "Primary material palette: stuccoed or plastered walls combined with carved stone structural members and trim."
+    },
+    "彩色タイル＋石材": {
+        "prompt": "Primary material palette: carved stone masonry with selective glazed tile or mosaic accents used on roofs, domes, or decorative surfaces."
+    }
+}
+
+
+STYLE_MATERIAL_COMPATIBILITY = {
+    "西洋ゴシック / ロマネスク": ["石灰岩", "花崗岩", "レンガ＋石材", "温かい砂岩", "彩色タイル＋石材"],
+    "ムガル / タージマハル系": ["白大理石", "赤砂岩＋白大理石", "温かい砂岩"],
+    "モリッシュ / アンダルシア系": ["漆喰＋石材", "彩色タイル＋石材", "温かい砂岩", "レンガ＋石材"],
+    "ビザンティン / 東地中海系": ["レンガ＋石材", "彩色タイル＋石材", "石灰岩", "漆喰＋石材"],
+    "ラージプート宮殿要塞系": ["温かい砂岩", "白大理石", "赤砂岩＋白大理石", "石灰岩"],
+    "地中海修道院 / 要塞系": ["石灰岩", "漆喰＋石材", "レンガ＋石材", "温かい砂岩"],
+    "おとぎ話風ヨーロッパ城郭": ["石灰岩", "花崗岩", "レンガ＋石材", "彩色タイル＋石材", "温かい砂岩"]
+}
+
+st.sidebar.markdown("#### バリエーション設定")
+style_mode = st.sidebar.selectbox(
+    "建築スタイル",
+    list(STYLE_PRESETS.keys()),
+    index=0,
+    help="ランダムを選ぶと、生成ごとに建築様式を変えられます。"
+)
+material_mode = st.sidebar.selectbox(
+    "主要素材",
+    list(MATERIAL_PRESETS.keys()),
+    index=0,
+    help="ランダムを選ぶと、生成ごとに主要素材の印象を変えられます。"
+)
+
+if st.sidebar.button("ランダム候補を引き直す", use_container_width=True):
+    for key_name in [
+        "chosen_style_profile",
+        "chosen_material_profile",
+        "effective_generation_prompt",
+        "effective_style_label",
+        "effective_material_label"
+    ]:
+        st.session_state.pop(key_name, None)
+    st.session_state.generated_image_bytes = None
+    st.rerun()
+
+
+def _available_profile_keys(presets):
+    return [
+        name for name in presets.keys()
+        if name not in ("ランダム（毎回）", "固定しない（自由）")
+    ]
+
+
+def _random_profile_key(presets):
+    return random.choice(_available_profile_keys(presets))
+
+
+def resolve_style_profile(selection):
+    """UI選択に応じて、使うスタイルプロファイルを確定する。"""
+    if selection == "固定しない（自由）":
+        return None, None
+
+    if selection == "ランダム（毎回）":
+        stored_name = st.session_state.get("chosen_style_profile")
+        if stored_name in STYLE_PRESETS and STYLE_PRESETS[stored_name] is not None:
+            return stored_name, STYLE_PRESETS[stored_name]
+
+        chosen_name = _random_profile_key(STYLE_PRESETS)
+        st.session_state["chosen_style_profile"] = chosen_name
+        return chosen_name, STYLE_PRESETS[chosen_name]
+
+    return selection, STYLE_PRESETS.get(selection)
+
+
+def _get_compatible_material_keys(style_name):
+    keys = STYLE_MATERIAL_COMPATIBILITY.get(style_name)
+    if keys:
+        return [k for k in keys if k in MATERIAL_PRESETS and MATERIAL_PRESETS[k] is not None]
+    return _available_profile_keys(MATERIAL_PRESETS)
+
+
+def resolve_material_profile(selection, style_name):
+    """UI選択とスタイルに応じて、使う素材プロファイルを確定する。"""
+    if selection == "固定しない（自由）":
+        return None, None
+
+    if selection == "ランダム（毎回）":
+        stored_name = st.session_state.get("chosen_material_profile")
+        compatible_keys = (
+            _get_compatible_material_keys(style_name)
+            if style_name else _available_profile_keys(MATERIAL_PRESETS)
+        )
+
+        if stored_name in compatible_keys:
+            return stored_name, MATERIAL_PRESETS[stored_name]
+
+        chosen_name = random.choice(compatible_keys)
+        st.session_state["chosen_material_profile"] = chosen_name
+        return chosen_name, MATERIAL_PRESETS[chosen_name]
+
+    return selection, MATERIAL_PRESETS.get(selection)
+
+
+def build_effective_generation_prompt(base_prompt, style_selection, material_selection):
+    """ベースプロンプトに、スタイルと素材の指示を追加して最終プロンプトを作る。"""
+    style_name, style_profile = resolve_style_profile(style_selection)
+    material_name, material_profile = resolve_material_profile(material_selection, style_name)
+
+    sections = [base_prompt.strip()]
+    sections.append(
+        "For this generation, diversify the architectural language and material palette. "
+        "Avoid defaulting to the same Western stone castle every time."
+    )
+
+    if style_profile is None:
+        sections.append(
+            "Architectural language is open for this generation. It may draw from "
+            "Western European, Mughal, Moorish, Byzantine, Rajput, Mediterranean, "
+            "or another plausible monumental tradition, as long as the result remains "
+            "coherent, realistic, and architecturally unified."
+        )
+    else:
+        sections.append("Architectural language for this generation: " + style_profile["prompt"])
+
+    if material_profile is None:
+        sections.append(
+            "Material palette is open for this generation. Choose materials that remain "
+            "coherent with the architectural language of the building."
+        )
+    else:
+        sections.append("Primary material palette for this generation: " + material_profile["prompt"])
+
+    sections.append(
+        "Use one coherent regional architectural language and a compatible primary "
+        "material palette for the whole complex. If the material palette is randomized, "
+        "choose it from materials that fit the selected architectural language, so that, "
+        "for example, a Mughal or Taj-Mahal-like design is expressed with plausible "
+        "materials such as marble or sandstone rather than an arbitrary mismatched material."
+    )
+
+    sections.append(
+        "Allow moderate variation within the chosen style: slightly different stone tones, "
+        "finishes, trim, accents, or secondary materials are welcome, but keep the overall "
+        "result realistic, plausible, and stylistically coherent."
+    )
+
+    final_prompt = "\n\n".join(sections)
+
+    st.session_state["effective_style_label"] = style_name if style_name else "自由"
+    st.session_state["effective_material_label"] = material_name if material_name else "自由"
+    st.session_state["effective_generation_prompt"] = final_prompt
+
+    return final_prompt
 
 # ============================================================
 # 基本関数
@@ -1376,6 +1589,9 @@ if "app_phase" not in st.session_state:
     st.session_state.generated_image_bytes = None
     st.session_state.ai_input_image_bytes = None
     st.session_state.need_generate_next = False
+    st.session_state.effective_generation_prompt = None
+    st.session_state.effective_style_label = None
+    st.session_state.effective_material_label = None
     generate_initial_candidates()
 
 if (
@@ -1469,6 +1685,14 @@ if st.session_state.app_phase == "choice":
                             )
                             st.session_state.generated_image_bytes = None
                             st.session_state.ai_input_image_bytes = None
+                            for key_name in [
+                                "chosen_style_profile",
+                                "chosen_material_profile",
+                                "effective_generation_prompt",
+                                "effective_style_label",
+                                "effective_material_label"
+                            ]:
+                                st.session_state.pop(key_name, None)
 
                             if st.session_state.choice_step >= ADDITION_ROUNDS:
                                 st.session_state.app_phase = "final"
@@ -1657,12 +1881,21 @@ elif st.session_state.app_phase == "generate":
 
         if st.session_state.generated_image_bytes is None:
             with st.spinner("AIがレンダリングしています..."):
+                effective_prompt = build_effective_generation_prompt(
+                    user_prompt, style_mode, material_mode
+                )
                 st.session_state.generated_image_bytes = generate_castle_image(
                     st.session_state.ai_input_image_bytes,
-                    user_prompt,
+                    effective_prompt,
                     api_provider,
                     selected_api_key
                 )
+
+        if st.session_state.get("effective_style_label") or st.session_state.get("effective_material_label"):
+            st.caption(
+                f"スタイル：{st.session_state.get('effective_style_label', '自由')} / "
+                f"素材：{st.session_state.get('effective_material_label', '自由')}"
+            )
 
         if st.session_state.generated_image_bytes:
             result_inner_cols = st.columns([0.10, 0.80, 0.10])
@@ -1680,6 +1913,14 @@ elif st.session_state.app_phase == "generate":
     with col1:
         if st.button("別プロンプト・別APIで再生成", use_container_width=True):
             st.session_state.generated_image_bytes = None
+            for key_name in [
+                "chosen_style_profile",
+                "chosen_material_profile",
+                "effective_generation_prompt",
+                "effective_style_label",
+                "effective_material_label"
+            ]:
+                st.session_state.pop(key_name, None)
             st.rerun()
 
     with col2:
