@@ -1802,34 +1802,12 @@ if st.session_state.app_phase == "choice":
             )
 
             st.markdown(
-                """
-                <div style="
-                    margin-top:18px;
-                    padding:14px 16px;
-                    border:1px solid #d9d9d9;
-                    border-radius:10px;
-                    background-color:#fafafa;
-                ">
-                    <div style="font-size:18px; font-weight:700; margin-bottom:12px;">
-                        線の見方
-                    </div>
-
-                    <div style="display:flex; align-items:center; gap:12px; margin-bottom:9px;">
-                        <div style="width:48px; flex:0 0 48px; border-top:4px solid #000000;"></div>
-                        <span style="font-size:15px;">前回から残っているひも</span>
-                    </div>
-
-                    <div style="display:flex; align-items:center; gap:12px; margin-bottom:9px;">
-                        <div style="width:48px; flex:0 0 48px; border-top:4px solid #1C83E1;"></div>
-                        <span style="font-size:15px;">新しく追加したひも</span>
-                    </div>
-
-                    <div style="display:flex; align-items:center; gap:12px;">
-                        <div style="width:48px; flex:0 0 48px; border-top:4px dashed #1C83E1;"></div>
-                        <span style="font-size:15px;">削除したひもの元の位置</span>
-                    </div>
-                </div>
-                """,
+                """<div style="margin-top:18px; padding:14px 16px; border:1px solid #d9d9d9; border-radius:10px; background-color:#fafafa;">
+<div style="font-size:18px; font-weight:700; margin-bottom:12px;">線の見方</div>
+<div style="display:flex; align-items:center; gap:12px; margin-bottom:9px;"><div style="width:48px; flex:0 0 48px; border-top:4px solid #000000;"></div><span style="font-size:15px;">前回から残っているひも</span></div>
+<div style="display:flex; align-items:center; gap:12px; margin-bottom:9px;"><div style="width:48px; flex:0 0 48px; border-top:4px solid #1C83E1;"></div><span style="font-size:15px;">新しく追加したひも</span></div>
+<div style="display:flex; align-items:center; gap:12px;"><div style="width:48px; flex:0 0 48px; border-top:4px dashed #1C83E1;"></div><span style="font-size:15px;">削除したひもの元の位置</span></div>
+</div>""",
                 unsafe_allow_html=True
             )
 
