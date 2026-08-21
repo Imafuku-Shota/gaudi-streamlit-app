@@ -10,31 +10,6 @@ import itertools
 import base64
 from PIL import Image
 
-
-
-
-
-import requests
-
-API_KEY = "sk-02R6mhUL932XQQq5lB2bEOiEP3KNm0eCQcpCqbwdbTTDfKkS"
-
-response = requests.get(
-    "https://api.stability.ai/v1/user/balance",
-    headers={
-        "Authorization": f"Bearer {API_KEY}"
-    }
-)
-
-print(response.json())
-
-
-
-
-
-
-
-
-
 st.set_page_config(layout="wide")
 
 # 画面上部の余白を小さくし、ページ全体を少し上へ寄せる。
