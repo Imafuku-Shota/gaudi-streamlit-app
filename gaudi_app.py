@@ -1719,6 +1719,9 @@ if st.session_state.app_phase == "choice":
                             use_container_width=True
                         )
 
+                        candidate_count = count_active_strings(candidate)
+                        st.caption(f"ひもの本数：{candidate_count}本")
+
                         if st.button(
                             f"案 {idx + 1} を選択",
                             key=f"select_{st.session_state.choice_step}_{idx}",
