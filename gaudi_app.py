@@ -673,16 +673,25 @@ def get_string_bottom_y(structure, s):
 
 def string_has_child(target_s, active_strings):
     """
-    target_s の中央点に、他の有効なひもが論理的に接続しているか確認する。
+    target_s の内部ノードに、他の有効なひもが論理的に接続しているか確認する。
+
+    追加ひもは「その時点で一番下だった内部ノード」に接続されるため、
+    特定の中央ノードだけではなく、target_s を構成する内部ノード全体を対象に判定する。
     """
-    middle_node = get_string_middle_node(target_s)
+    base = get_string_internal_start(target_s)
+    target_internal_nodes = set(
+        range(base, base + NUM_INTERNAL_NODES)
+    )
 
     for other in active_strings:
         if other["id"] == target_s["id"]:
             continue
 
         other_start, other_end = get_string_logical_nodes(other)
-        if other_start == middle_node or other_end == middle_node:
+        if (
+            other_start in target_internal_nodes
+            or other_end in target_internal_nodes
+        ):
             return True
 
     return False
@@ -690,7 +699,7 @@ def string_has_child(target_s, active_strings):
 def get_leaf_strings(structure):
     """
     何もぶら下がっていない末端のひもだけを返す。
-    つまり、そのひもの中央点に他のひもが接続していないものだけを返す。
+    つまり、そのひもの内部ノードに他のひもが接続していないものだけを返す。
     """
     active_strings = get_active_strings(structure)
     leaf_strings = []
