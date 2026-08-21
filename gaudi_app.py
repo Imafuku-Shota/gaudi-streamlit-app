@@ -115,6 +115,49 @@ def read_secret(name):
 stability_api_key = read_secret("STABILITY_API_KEY")
 openai_api_key = read_secret("OPENAI_API_KEY")
 
+
+@st.cache_data(ttl=60, show_spinner=False)
+def get_stability_credit_balance(api_key):
+    """
+    Stability AI APIキーに紐づくクレジット残高を取得する。
+    成功時は (credits, None)、失敗時は (None, error_message) を返す。
+    APIキー自体は画面には表示しない。
+    """
+    if not api_key:
+        return None, "APIキーが設定されていません。"
+
+    url = "https://api.stability.ai/v1/user/balance"
+
+    try:
+        response = requests.get(
+            url,
+            headers={
+                "Authorization": f"Bearer {api_key}"
+            },
+            timeout=10
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+            credits = data.get("credits")
+
+            if credits is None:
+                return None, "残高情報が返されませんでした。"
+
+            return float(credits), None
+
+        if response.status_code == 401:
+            return None, "APIキーが無効、または認証に失敗しました。"
+
+        return None, f"残高取得に失敗しました（HTTP {response.status_code}）。"
+
+    except requests.exceptions.Timeout:
+        return None, "残高確認がタイムアウトしました。"
+    except requests.exceptions.RequestException:
+        return None, "Stability AIへの通信に失敗しました。"
+    except (ValueError, TypeError):
+        return None, "残高データを正しく読み取れませんでした。"
+
 # ============================================================
 # サイドバー：AI生成設定
 # ============================================================
@@ -138,6 +181,35 @@ if openai_api_key:
     st.sidebar.success("OpenAI：設定済み")
 else:
     st.sidebar.warning("OpenAI：未設定")
+
+st.sidebar.markdown("#### Stability AI 残高")
+
+if stability_api_key:
+    stability_credits, balance_error = get_stability_credit_balance(
+        stability_api_key
+    )
+
+    if stability_credits is not None:
+        st.sidebar.metric(
+            "残りクレジット",
+            f"{stability_credits:,.2f} credits"
+        )
+        st.sidebar.caption(
+            f"参考：約 ${stability_credits * 0.01:,.2f} 相当"
+        )
+    else:
+        st.sidebar.warning(balance_error)
+
+    if st.sidebar.button(
+        "Stability AI 残高を更新",
+        use_container_width=True
+    ):
+        get_stability_credit_balance.clear()
+        st.rerun()
+else:
+    st.sidebar.caption(
+        "STABILITY_API_KEY を設定すると残高を表示します。"
+    )
 
 if api_provider == "Stability AI":
     selected_api_key = stability_api_key
