@@ -1780,7 +1780,7 @@ if st.session_state.app_phase == "choice":
                 )
 
                 st.caption(
-                    f"選択中の骨組み：ひも {selected_count}本"
+                    f"ひもの本数：{selected_count}本"
                 )
 
             st.caption(
@@ -1791,9 +1791,9 @@ if st.session_state.app_phase == "choice":
         with right_col:
             st.subheader("次の候補")
 
-            st.write(
-                "前回選択した骨組みをもとに、既存のひもを1本削除し、"
-                "新しいひもを2本追加した候補を表示しています。"
+            st.markdown(
+                "前回選択した骨組みをもとに、次の操作を行った候補を表示しています。  \n"
+                "**既存のひもを1本削除 → 新しいひもを2本追加**"
             )
 
             render_candidate_grid(candidates)
