@@ -1783,9 +1783,13 @@ if st.session_state.app_phase == "choice":
                     f"ひもの本数：{selected_count}本"
                 )
 
-            st.caption(
-                f"選択段階：{st.session_state.choice_step + 1} / "
-                f"{total_choices}"
+            st.markdown(
+                f"""
+                <div style="font-size:22px; font-weight:700; margin-top:12px;">
+                    選択段階：{st.session_state.choice_step + 1} / {total_choices}
+                </div>
+                """,
+                unsafe_allow_html=True
             )
 
         with right_col:
@@ -1805,9 +1809,13 @@ if st.session_state.app_phase == "choice":
             "候補を4つ表示しています。"
         )
 
-        st.caption(
-            f"選択段階：{st.session_state.choice_step + 1} / "
-            f"{total_choices}"
+        st.markdown(
+            f"""
+            <div style="font-size:22px; font-weight:700; margin-top:12px;">
+                選択段階：{st.session_state.choice_step + 1} / {total_choices}
+            </div>
+            """,
+            unsafe_allow_html=True
         )
 
         initial_outer_cols = st.columns([0.20, 0.60, 0.20])
