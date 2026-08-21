@@ -1537,9 +1537,12 @@ def apply_change(parent_structure, change, rng=None):
 def generate_unique_next_candidates(parent_structure, num_choices):
     """
     選択済み構造を親として、
-    1. 既存のひもを1本つなぎ直す
-    2. 新しいひもを1本追加する
+    1. 既存のひもを1本削除する
+    2. 新しいひもを2本追加する
     の順で候補を生成する。
+
+    削除対象は、他のひもがぶら下がっていない末端のひものうち、
+    一番下にある削除可能なひもから選ぶ。
     """
     rng = random.Random(random.randint(0, 10**9))
 
@@ -1547,10 +1550,10 @@ def generate_unique_next_candidates(parent_structure, num_choices):
     used_structure_signatures = set()
     parent_signature = structure_signature(parent_structure)
 
-    # 親構造に対するつなぎ直し候補は最初に1回だけ計算する
-    reconnect_changes = get_valid_reconnect_changes(parent_structure)
+    # 親構造から削除可能なひもを取得する
+    delete_targets = get_bottom_leaf_strings(parent_structure)
 
-    if not reconnect_changes:
+    if not delete_targets:
         return []
 
     attempts = 0
@@ -1559,23 +1562,34 @@ def generate_unique_next_candidates(parent_structure, num_choices):
     while len(candidates) < num_choices and attempts < max_attempts:
         attempts += 1
 
-        # 前段階の青表示を引き継がず、今回の2変化だけを記録する
+        # 前段階の青表示を引き継がず、今回の削除・追加だけを表示する
         candidate_base = clear_change_display_metadata(
             deep_copy_structure(parent_structure)
         )
 
-        reconnect_change = rng.choice(reconnect_changes)
-        candidate = apply_change(candidate_base, reconnect_change)
+        # 1本削除
+        delete_target = rng.choice(delete_targets)
+        delete_change = ("delete", delete_target["id"])
+        candidate = apply_change(candidate_base, delete_change)
 
-        add_changes = get_valid_add_pairs(candidate)
-
-        if not add_changes:
+        # 1本目を追加
+        add_pairs_1 = get_valid_add_pairs(candidate)
+        if not add_pairs_1:
             continue
 
-        idx1, idx2 = rng.choice(add_changes)
-        add_change = ("add", idx1, idx2)
+        idx1, idx2 = rng.choice(add_pairs_1)
+        add_change_1 = ("add", idx1, idx2)
+        candidate = apply_change(candidate, add_change_1, rng=rng)
 
-        candidate = apply_change(candidate, add_change, rng=rng)
+        # 2本目を追加
+        add_pairs_2 = get_valid_add_pairs(candidate)
+        if not add_pairs_2:
+            continue
+
+        idx3, idx4 = rng.choice(add_pairs_2)
+        add_change_2 = ("add", idx3, idx4)
+        candidate = apply_change(candidate, add_change_2, rng=rng)
+
         candidate_signature = structure_signature(candidate)
 
         if candidate_signature == parent_signature:
@@ -1584,8 +1598,8 @@ def generate_unique_next_candidates(parent_structure, num_choices):
         if candidate_signature in used_structure_signatures:
             continue
 
-        candidate["action_performed"] = "reconnect_then_add"
-        candidate["actions_taken"] = ["reconnect", "add"]
+        candidate["action_performed"] = "delete_then_add2"
+        candidate["actions_taken"] = ["delete", "add", "add"]
 
         used_structure_signatures.add(candidate_signature)
         candidates.append(candidate)
@@ -1617,7 +1631,7 @@ def generate_initial_candidates():
 
 
 def generate_next_candidates_from_selected():
-    """選択済み構造を親として、重複しないランダムな変化を加えた候補を生成する。"""
+    """選択済み構造を親として、1本削除・2本追加した候補を生成する。"""
     parent = st.session_state.selected_structure
     if parent is None:
         return
@@ -1705,33 +1719,6 @@ if st.session_state.app_phase == "choice":
                             use_container_width=True
                         )
 
-                        current_count = count_active_strings(candidate)
-
-                        if st.session_state.choice_step == 0:
-                            st.caption(
-                                f"案 {idx + 1}：初期ひも {current_count}本"
-                            )
-                        else:
-                            act = candidate.get("action_performed", "add")
-
-                            if act == "reconnect_then_add":
-                                st.caption(
-                                    f"案 {idx + 1}：🔄 つなぎ直し → "
-                                    f"🟢 ひも追加（計 {current_count}本）"
-                                )
-                            else:
-                                action_labels = {
-                                    "add": "🟢 ひも追加",
-                                    "delete": "🗑️ ひも削除（削除前を青点線）",
-                                    "reconnect": "🔄 つなぎ直し",
-                                    "initial": "初期ひも"
-                                }
-
-                                label = action_labels.get(act, "ひも追加")
-                                st.caption(
-                                    f"案 {idx + 1}：{label}（計 {current_count}本）"
-                                )
-
                         if st.button(
                             f"案 {idx + 1} を選択",
                             key=f"select_{st.session_state.choice_step}_{idx}",
@@ -1802,8 +1789,8 @@ if st.session_state.app_phase == "choice":
             st.subheader("次の候補")
 
             st.write(
-                "選んだ形をもとに、既存のひもを1本つなぎ直した後、"
-                "新しいひもを1本追加した候補を表示しています。"
+                "前回選択した骨組みをもとに、既存のひもを1本削除し、"
+                "新しいひもを2本追加した候補を表示しています。"
             )
 
             render_candidate_grid(candidates)
