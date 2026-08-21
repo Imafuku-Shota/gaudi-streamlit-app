@@ -16,7 +16,7 @@ from PIL import Image
 
 import requests
 
-API_KEY = "ここにStability AIのAPIキー"
+API_KEY = "sk-02R6mhUL932XQQq5lB2bEOiEP3KNm0eCQcpCqbwdbTTDfKkS"
 
 response = requests.get(
     "https://api.stability.ai/v1/user/balance",
