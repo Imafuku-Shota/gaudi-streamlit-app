@@ -182,35 +182,6 @@ if openai_api_key:
 else:
     st.sidebar.warning("OpenAI：未設定")
 
-st.sidebar.markdown("#### Stability AI 残高")
-
-if stability_api_key:
-    stability_credits, balance_error = get_stability_credit_balance(
-        stability_api_key
-    )
-
-    if stability_credits is not None:
-        st.sidebar.metric(
-            "残りクレジット",
-            f"{stability_credits:,.2f} credits"
-        )
-        st.sidebar.caption(
-            f"参考：約 ${stability_credits * 0.01:,.2f} 相当"
-        )
-    else:
-        st.sidebar.warning(balance_error)
-
-    if st.sidebar.button(
-        "Stability AI 残高を更新",
-        use_container_width=True
-    ):
-        get_stability_credit_balance.clear()
-        st.rerun()
-else:
-    st.sidebar.caption(
-        "STABILITY_API_KEY を設定すると残高を表示します。"
-    )
-
 if api_provider == "Stability AI":
     selected_api_key = stability_api_key
     if not selected_api_key:
